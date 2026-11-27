@@ -311,9 +311,7 @@ export function ExternalTunnelsPanel({
           kind="empty"
           illustration={false}
           title={t("No shared links")}
-          description={t(
-            "Create a link to open a web app or reach this computer from anywhere.",
-          )}
+          description={t("Create a link to open a web app or reach this computer from anywhere.")}
         />
       ) : null}
     </section>

@@ -105,7 +105,9 @@ function GitFeedbackContent({
     kind === "error" && !!detail && /cannot delete branch[\s\S]*used by worktree/i.test(detail);
   // Git localizes its hints, but the config keys it names stay in English in every language.
   const divergedPull =
-    kind === "error" && !!detail && /advice\.diverging|pull\.rebase|divergent branches/i.test(detail);
+    kind === "error" &&
+    !!detail &&
+    /advice\.diverging|pull\.rebase|divergent branches/i.test(detail);
   const message = (
     <>
       {title}
