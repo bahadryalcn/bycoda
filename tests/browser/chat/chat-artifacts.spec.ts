@@ -593,7 +593,12 @@ test("chat code and command results remain compact until explicitly opened", asy
   // Only the changes and the output the reader opened are open; the reader closes both.
   const openOutputs = page.locator('summary[aria-label^="Hide output for"]');
   await expect(openOutputs).toHaveCount(2);
-  while ((await openOutputs.count()) > 0) await openOutputs.first().click();
+  // Close one at a time and wait for each to settle, so a click never targets a summary that the
+  // previous close is still re-rendering.
+  for (let left = 2; left > 0; left -= 1) {
+    await openOutputs.first().click();
+    await expect(openOutputs).toHaveCount(left - 1);
+  }
   await expect(page.locator("[data-tool-inspection]")).toHaveCount(0);
   await expect
     .poll(() => page.locator(".zen-phase-live").evaluate((node) => node.clientHeight))

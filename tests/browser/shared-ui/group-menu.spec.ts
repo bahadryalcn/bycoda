@@ -76,7 +76,9 @@ for (const width of [390, 768, 1440]) {
       await page.keyboard.press("Escape");
       await expect(flyout).not.toBeVisible();
       await expect(root).toBeVisible();
-      await root.getByRole("menuitem", { name: "Delete", exact: true }).click();
+      // Hover opens the branch, as for Reorder; a click after hover can land on the opened
+      // flyout in WebKit, which already covers the row at 390px.
+      await root.getByRole("menuitem", { name: "Delete", exact: true }).hover();
       const deletion = page.getByRole("menu", { name: "Delete", exact: true });
       await expect(
         deletion.getByRole("menuitem", { name: "Delete group", exact: true }),
