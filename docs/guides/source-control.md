@@ -110,8 +110,8 @@ Changes retain staged and unstaged sections and the saved list/tree presentation
 File rows expose the exact relative path. File names keep the same size and weight,
 including repeated basenames; parent directories use smaller, secondary text.
 A partially staged path can appear in both sections, so filter
-results count staged and unstaged **entries**. Filtering changes the displayed list;
-**All** operations still affect the entire repository, including hidden entries.
+results count staged and unstaged **entries**. With a filter active, bulk stage,
+unstage and discard apply to the shown entries. **Open All Changes** opens the full diff.
 Selected-entry actions retain their own narrower scope and existing confirmations.
 
 Select a deleted-file row to inspect its deletion diff; opening the missing file
@@ -119,7 +119,8 @@ in an editor remains unavailable. Commits opened from file history or blame keep
 the repository that was inspected, even when another checkout is active.
 Changing the Git language updates labels in already-open diffs.
 
-Use the **Changes** header to filter, switch between list and tree, or stage changes.
+The **Changes** header has separate icons for **Open All Changes** and **Discard All Changes**,
+alongside the filter, list/tree toggle and stage action. Bulk discard asks for confirmation.
 Unstaged rows offer **Discard Changes** directly beside **Stage Changes**, as well
 as in the file menu. Row actions appear on hover, keyboard focus or selection and
 remain available on touch devices. Discard keeps its confirmation and selected-entry
