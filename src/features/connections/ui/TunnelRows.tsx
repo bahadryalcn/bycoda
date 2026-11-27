@@ -130,7 +130,7 @@ function TunnelRow({
     <article className="external-tunnel-row">
       <TargetIcon className="icon-md" aria-hidden />
       <div className="external-tunnel-main">
-        <Text weight="medium">{isHost ? t("bycoda host") : t("Dev server")}</Text>
+        <Text weight="medium">{isHost ? t("Remote access") : t("Web app")}</Text>
         <div className="external-tunnel-meta">
           <Text as="span" size="caption" tone="muted">
             {providerName(tunnel.provider)}

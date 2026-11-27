@@ -9,6 +9,7 @@ import {
 } from "../model/settings";
 
 import { Group, Row, Toggle } from "../../../shared/ui/settings";
+import { RemoteMediaRow } from "./RemoteMediaSettings";
 
 export function RemoteReconnectGroup() {
   useLocale();
@@ -33,6 +34,7 @@ export function RemoteReconnectGroup() {
           onChange={saveRemoteAutoReconnect}
         />
       </Row>
+      <RemoteMediaRow />
     </Group>
   );
 }

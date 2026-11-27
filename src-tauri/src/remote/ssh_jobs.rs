@@ -23,6 +23,13 @@ pub(super) fn start_ssh_job(
     let adding = existing.is_none();
     let named = !name.trim().is_empty();
     let job = Job::new();
+    job.flow(if adding {
+        "add"
+    } else if upgrade {
+        "update"
+    } else {
+        "reconnect"
+    });
     let id = job.view().id;
     {
         let state = app.state::<RemoteConnections>();
@@ -47,7 +54,7 @@ pub(super) fn start_ssh_job(
             let mut machine = if let Some(mut existing) = existing {
                 if upgrade {
                     let (platform, dial) = remote_ssh::detect_platform(&target, &job, &askpass)?;
-                    job.message("Updating bycoda Host on the machine…");
+                    job.step("update", "Updating bycoda Host on the machine…");
                     let output = remote_ssh::run_script(
                         &dial,
                         platform,
@@ -68,12 +75,12 @@ pub(super) fn start_ssh_job(
                         .ok_or("Host did not report a valid port")?;
                     existing.ssh = Some(target.clone());
                 } else {
-                    job.message("Reconnecting to the machine…");
+                    job.step("open", "Reconnecting to the machine…");
                 }
                 existing
             } else {
                 let (platform, dial) = remote_ssh::detect_platform(&target, &job, &askpass)?;
-                job.message("Installing or starting bycoda Host…");
+                job.step("install", "Installing or starting bycoda Host…");
                 let output = remote_ssh::run_script(
                     &dial,
                     platform,
@@ -92,7 +99,7 @@ pub(super) fn start_ssh_job(
                     .and_then(|v| u16::try_from(v).ok())
                     .filter(|p| *p > 0)
                     .ok_or("Host did not report a valid port")?;
-                job.message("Pairing this desktop with the host…");
+                job.step("pair", "Pairing this desktop with the host…");
                 let seed = device_proof::generate_seed()?;
                 let pair = remote_ssh::run_script(
                     &dial,
@@ -137,7 +144,7 @@ pub(super) fn start_ssh_job(
                     proof_seed: Some(key.encoded_seed()),
                 }
             };
-            job.message("Opening the secure connection…");
+            job.step("open", "Opening the secure connection…");
             let connect = |target: &SshTarget| -> Result<(Tunnel, Value), String> {
                 let tunnel = Tunnel::start(target, Some(&job), Some(&askpass))?;
                 let descriptor = rpc(
@@ -154,7 +161,7 @@ pub(super) fn start_ssh_job(
                 // A reconnect to a host that now listens elsewhere (it was
                 // reinstalled or updated): ask it over SSH and retry once.
                 Err(error) if !adding && !upgrade && port_may_have_moved(&error) => {
-                    job.message("Looking for the host on the machine…");
+                    job.step("open", "Looking for the host on the machine…");
                     let (platform, dial) = remote_ssh::detect_platform(&target, &job, &askpass)?;
                     let output = remote_ssh::run_script(
                         &dial,
@@ -168,7 +175,7 @@ pub(super) fn start_ssh_job(
                         Some(port) if port != target.remote_port => {
                             target.remote_port = port;
                             machine.ssh = Some(target.clone());
-                            job.message("Opening the secure connection…");
+                            job.step("open", "Opening the secure connection…");
                             connect(&target)?
                         }
                         _ => return Err(error),

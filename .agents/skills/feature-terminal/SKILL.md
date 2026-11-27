@@ -13,6 +13,7 @@ Own terminal reading/input presentation and existing process controllers. Server
 - `src/features/terminal/ui/TerminalTools.tsx`
 - `src/features/terminal/`
 - `host/terminals/terminals.ts`, `host/terminal-process.ts`
+- `src/features/terminal/runtime/hostShell.ts`: remote project shells on the Host when the machine has no saved SSH
 - `src-tauri/src/mobile_pty.rs`, `src-tauri/src/pty.rs`
 
 ## Workflow

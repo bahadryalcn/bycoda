@@ -122,6 +122,67 @@ function SourceCard({
   );
 }
 
+/** The source cards in one grid; past one row the last slot sums up the rest until the reader asks for all. */
+function SourceCardGrid({ sources, load }: { sources: readonly SearchSource[]; load: boolean }) {
+  const t = useT();
+  const format = useFormat();
+  const [showAll, setShowAll] = useState(false);
+  const folded = !showAll && sources.length > COLUMNS;
+  const shown = folded ? sources.slice(0, COLUMNS - 1) : sources;
+  const rest = sources.slice(shown.length);
+  return (
+    <ol className={CARD_GRID} data-search-sources>
+      {shown.map((source, index) => (
+        <li
+          key={source.url}
+          {...motionAttributes({ enter: "rise", duration: "standard" }, "flex min-w-0")}
+        >
+          <SourceCard source={source} index={index + 1} load={load} />
+        </li>
+      ))}
+      {folded ? (
+        <li {...motionAttributes({ enter: "rise", duration: "standard" }, "flex min-w-0")}>
+          <Button
+            variant="secondary"
+            layout="stacked"
+            align="start"
+            controlHeight="fill"
+            controlMinHeight="large"
+            motion="none"
+            type="button"
+            className="w-full min-w-0"
+            onClick={() => setShowAll(true)}
+          >
+            <span className="group/web-search flex h-full w-full min-w-0 flex-col justify-between gap-2">
+              <SiteStack sources={rest} load={load} />
+              <Text size="caption" weight="medium">
+                {t("{p0} more sources", { p0: format.formatNumber(rest.length) })}
+              </Text>
+            </span>
+          </Button>
+        </li>
+      ) : null}
+    </ol>
+  );
+}
+
+/**
+ * The pages a turn's folded web searches returned, kept under the answer so its sources stay one
+ * click away after the work collapses. Card numbers match the reply's `[n]` citations.
+ */
+export function TurnSearchSources({ sources }: { sources: readonly SearchSource[] }) {
+  const t = useT();
+  const [rowRef, near] = useNearViewport<HTMLDivElement>();
+  return (
+    <div ref={rowRef} className="flex min-w-0 flex-col pt-1" data-turn-sources>
+      <Text size="secondary" weight="medium" tone="muted" className="px-2">
+        {t("Sources")}
+      </Text>
+      <SourceCardGrid sources={sources} load={near} />
+    </div>
+  );
+}
+
 /**
  * A web search in the transcript: a pill with the globe, what it found and the sites it read,
  * over a row of source cards. While it runs the label sweeps and empty cards hold the places the
@@ -134,7 +195,6 @@ export function WebSearchRow({ block, working }: { block: Block; working: boolea
   const sources = preview?.sources ?? [];
   const query = preview?.query?.trim() ?? "";
   const [open, setOpen] = useRetainedDisclosure<boolean>(`WebSearchRow:${block.id}`, true);
-  const [showAll, setShowAll] = useState(false);
   const [rowRef, near] = useNearViewport<HTMLDivElement>();
 
   const label = working
@@ -170,9 +230,6 @@ export function WebSearchRow({ block, working }: { block: Block; working: boolea
     </span>
   );
 
-  const folded = !showAll && sources.length > COLUMNS;
-  const shown = folded ? sources.slice(0, COLUMNS - 1) : sources;
-  const rest = sources.slice(shown.length);
   const name = query || label;
 
   return (
@@ -190,40 +247,7 @@ export function WebSearchRow({ block, working }: { block: Block; working: boolea
           }
           summary={pill}
         >
-          {open ? (
-            <ol className={CARD_GRID} data-search-sources>
-              {shown.map((source, index) => (
-                <li
-                  key={source.url}
-                  {...motionAttributes({ enter: "rise", duration: "standard" }, "flex min-w-0")}
-                >
-                  <SourceCard source={source} index={index + 1} load={near} />
-                </li>
-              ))}
-              {folded ? (
-                <li {...motionAttributes({ enter: "rise", duration: "standard" }, "flex min-w-0")}>
-                  <Button
-                    variant="secondary"
-                    layout="stacked"
-                    align="start"
-                    controlHeight="fill"
-                    controlMinHeight="large"
-                    motion="none"
-                    type="button"
-                    className="w-full min-w-0"
-                    onClick={() => setShowAll(true)}
-                  >
-                    <span className="group/web-search flex h-full w-full min-w-0 flex-col justify-between gap-2">
-                      <SiteStack sources={rest} load={near} />
-                      <Text size="caption" weight="medium">
-                        {t("{p0} more sources", { p0: format.formatNumber(rest.length) })}
-                      </Text>
-                    </span>
-                  </Button>
-                </li>
-              ) : null}
-            </ol>
-          ) : null}
+          {open ? <SourceCardGrid sources={sources} load={near} /> : null}
         </Disclosure>
       ) : (
         <>

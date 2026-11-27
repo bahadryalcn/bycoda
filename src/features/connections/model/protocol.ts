@@ -691,9 +691,15 @@ export type RemoteMachine = {
   } | null;
 };
 
+/** What an SSH setup job does; each flow has its own ordered steps. */
+export type SshSetupFlow = "add" | "update" | "reconnect";
+export type SshSetupStep = "connect" | "install" | "update" | "pair" | "open";
 export type SshSetup = {
   id: string;
+  /** English text of the current step, for logs; the UI names the step from `step`. */
   message: string;
+  flow: SshSetupFlow;
+  step: SshSetupStep;
   prompt?: { id: string; message: string; confirm: boolean } | null;
   done: boolean;
   error?: string | null;

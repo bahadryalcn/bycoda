@@ -8,6 +8,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PasswordField } from "../../../shared/ui/PasswordField";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TextField } from "../../../shared/ui/TextField";
 import { RefreshCw } from "../../../shared/ui/icons";
@@ -90,40 +91,50 @@ export function TunnelStartForm({
   const { provider, setProvider, target, setTarget, localUrl, setLocalUrl, token, setToken } =
     draft;
   const selected = overview?.providers.find((entry) => entry.provider === provider);
+  // Funnel publishes this Host only, so choosing it moves the choice to remote access.
+  const funnel = provider === "tailscale";
   return (
     <div className="external-tunnel-form">
-      <div className="external-tunnel-choices">
-        <Field label={t("What to share")}>
-          <SegmentedControl
-            label={t("Tunnel target")}
-            value={target}
-            onValueChange={(value) => {
-              if (!state.pending && !(provider === "tailscale" && value !== "host"))
-                setTarget(value as TunnelTarget);
-            }}
-            options={[
-              { value: "dev-server", label: t("Dev server") },
-              { value: "host", label: t("bycoda host") },
-            ]}
-          />
-        </Field>
-        <Field label={t("Provider")}>
-          <SegmentedControl
-            label={t("Tunnel provider")}
-            value={provider}
-            onValueChange={(value) => {
-              if (state.pending) return;
-              setProvider(value as TunnelProvider);
-              if (value === "tailscale") setTarget("host");
-            }}
-            options={[
-              { value: "cloudflare", label: "Cloudflare" },
-              { value: "ngrok", label: "ngrok" },
-              { value: "tailscale", label: t("Tailscale Funnel (public)") },
-            ]}
-          />
-        </Field>
-      </div>
+      <RadioGroup
+        label={t("What to share")}
+        value={target}
+        disabled={state.pending}
+        onValueChange={(value) => setTarget(value as TunnelTarget)}
+        options={[
+          {
+            value: "dev-server",
+            label: t("Web app"),
+            description: t(
+              "A site running on this computer, like localhost:3000. Anyone with the link can open it.",
+            ),
+            disabled: funnel,
+            disabledReason: funnel ? t("Tailscale Funnel shares remote access only.") : undefined,
+          },
+          {
+            value: "host",
+            label: t("Remote access"),
+            description: t(
+              "Your phone and other computers reach bycoda on this computer. Each one still has to be a paired device.",
+            ),
+          },
+        ]}
+      />
+      <Field label={t("Provider")}>
+        <SegmentedControl
+          label={t("Tunnel provider")}
+          value={provider}
+          onValueChange={(value) => {
+            if (state.pending) return;
+            setProvider(value as TunnelProvider);
+            if (value === "tailscale") setTarget("host");
+          }}
+          options={[
+            { value: "cloudflare", label: "Cloudflare" },
+            { value: "ngrok", label: "ngrok" },
+            { value: "tailscale", label: t("Tailscale Funnel (public)") },
+          ]}
+        />
+      </Field>
       <div className="external-tunnel-actions">
         <Button
           type="button"
@@ -162,11 +173,6 @@ export function TunnelStartForm({
           ) : null}
         </InfoPopover>
       </div>
-      <InlineMessage tone="warning">
-        {t(
-          "Tunnels are public internet addresses. Anyone on the internet can reach the address; only device credentials protect it.",
-        )}
-      </InlineMessage>
       {(provider === "ngrok" || provider === "tailscale") && selected && !selected.installed ? (
         <InlineMessage tone="warning">
           {t("Install {p0} on {p1}, then check again.", {
@@ -250,31 +256,26 @@ export function TunnelStartForm({
           onStart(new FormData(event.currentTarget).has("automatic"));
         }}
       >
-        <TextField
-          label={t("Local URL or port")}
-          id={`${id}-url`}
-          value={target === "host" ? (overview?.hostLocalUrl ?? "") : localUrl}
-          readOnly={target === "host"}
-          disabled={state.pending}
-          placeholder="http://127.0.0.1:3000"
-          onChange={(event) => setLocalUrl(event.target.value)}
-          autoCapitalize="none"
-          spellCheck={false}
-          fieldClassName="min-w-0 flex-1"
-        />
-        {target === "host" ? (
-          <div className="external-tunnel-actions">
-            <InfoPopover label={t("Public access")}>
+        {target === "dev-server" ? (
+          <>
+            <TextField
+              label={t("Port or local address")}
+              id={`${id}-url`}
+              value={localUrl}
+              disabled={state.pending}
+              placeholder="3000"
+              onChange={(event) => setLocalUrl(event.target.value)}
+              autoCapitalize="none"
+              spellCheck={false}
+              fieldClassName="min-w-0 flex-1"
+            />
+            <Alert tone="warning">
               {t(
-                "Host access keeps device authentication and pairing. The public URL contains no device credential.",
+                "Anyone with the link can open this app. bycoda puts no sign-in in front of it, so the app needs its own.",
               )}
-            </InfoPopover>
-          </div>
-        ) : (
-          <Alert tone="warning">
-            {t("Anyone with this URL can reach the dev server. Keep access controls enabled.")}
-          </Alert>
-        )}
+            </Alert>
+          </>
+        ) : null}
         {target === "host" && provider === "cloudflare" ? (
           overview?.automaticHostAccess === true ? (
             <Button

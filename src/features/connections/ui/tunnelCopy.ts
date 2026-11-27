@@ -9,9 +9,7 @@ export const issueCopy = (issue: TunnelUiIssue): string =>
     "credential-missing": t("ngrok needs a valid authtoken."),
     "credential-store-unavailable": t("The secure credential store is unavailable."),
     "invalid-target": t("Enter a loopback HTTP or HTTPS URL, or a port from 1 to 65535."),
-    "host-target-required": t(
-      "This is the bycoda host port. Select bycoda host access to share it.",
-    ),
+    "host-target-required": t("This port is bycoda itself. Choose Remote access to share it."),
     "approval-required": t("Tailscale Funnel is not enabled for this computer yet."),
     "origin-unreachable": t("The local service is not listening on this computer."),
     "connection-failed": t("The tunnel provider could not connect."),

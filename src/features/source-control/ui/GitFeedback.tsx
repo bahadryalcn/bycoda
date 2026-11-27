@@ -103,6 +103,9 @@ function GitFeedbackContent({
   const context = [title, cwd, detail].filter(Boolean).join("\n\n");
   const branchInWorktree =
     kind === "error" && !!detail && /cannot delete branch[\s\S]*used by worktree/i.test(detail);
+  // Git localizes its hints, but the config keys it names stay in English in every language.
+  const divergedPull =
+    kind === "error" && !!detail && /advice\.diverging|pull\.rebase|divergent branches/i.test(detail);
   const message = (
     <>
       {title}
@@ -132,15 +135,19 @@ function GitFeedbackContent({
           languageDomain="git"
           onClose={() => setOpen(false)}
           footer={
-            <ModalActions align="start">
-              <CopyButton
-                variant="link"
-                label={t("Copy output")}
-                text={detail}
-                resetKeys={[detail]}
-                onClick={() => setCopyError(undefined)}
-              />
+            <ModalActions
+              start={
+                <CopyButton
+                  variant="ghost"
+                  label={t("Copy output")}
+                  text={detail}
+                  resetKeys={[detail]}
+                  onClick={() => setCopyError(undefined)}
+                />
+              }
+            >
               <Button
+                variant="ghost"
                 loading={saving}
                 disabled={saved}
                 disabledReason={saved ? t("Already saved to your notes.") : undefined}
@@ -163,6 +170,7 @@ function GitFeedbackContent({
                 {saved ? t("Saved") : t("Add to notes")}
               </Button>
               <Button
+                variant="primary"
                 onClick={() => {
                   requestAddToChat(context, "quote");
                   setOpen(false);
@@ -175,8 +183,15 @@ function GitFeedbackContent({
         >
           <div className="flex min-w-0 flex-col gap-3">
             {cwd ? (
-              <Text as="p" size="inherit" tone="secondary" className="break-all">
+              <Text as="p" family="mono" tone="secondary" className="break-all">
                 {cwd}
+              </Text>
+            ) : null}
+            {divergedPull ? (
+              <Text as="p" size="inherit" tone="primary">
+                {t(
+                  "Your branch and its remote both have new commits, so Git can’t fast-forward. Use Pull (Rebase) in the Git actions menu to replay your commits on top, or merge the remote branch.",
+                )}
               </Text>
             ) : null}
             {branchInWorktree ? (
@@ -188,9 +203,12 @@ function GitFeedbackContent({
             ) : null}
             <OutputBlock
               tone="primary"
+              frame="filled"
+              density="comfortable"
+              scroll
               tabIndex={0}
               aria-label={t("Output")}
-              className="max-h-[50dvh] min-w-0 overflow-auto break-all"
+              className="max-h-[50dvh]"
             >
               {detail}
             </OutputBlock>
