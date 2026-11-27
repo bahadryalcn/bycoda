@@ -85,7 +85,11 @@ async function render(
 }
 function button(label: string) {
   return [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-    (el) => el.textContent?.trim() === label || el.getAttribute("aria-label") === label,
+    (el) =>
+      el.textContent?.trim() === label ||
+      el.getAttribute("aria-label") === label ||
+      // Picker options carry a description after their title.
+      el.querySelector("[class*='choiceLabel']")?.textContent?.trim() === label,
   )!;
 }
 beforeEach(async () => {

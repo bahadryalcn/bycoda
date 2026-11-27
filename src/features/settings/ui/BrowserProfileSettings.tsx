@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "@tauri-apps/api/core";
@@ -61,7 +62,7 @@ export function BrowserProfileSettings() {
       const result = await requestProfiles<Sources>("sources");
       if (isCurrent()) setSources(result);
     } catch (error) {
-      if (isCurrent()) setSourcesError(error instanceof Error ? error.message : String(error));
+      if (isCurrent()) setSourcesError(errorText(error));
     }
   };
 

@@ -59,7 +59,7 @@ it("lets workspace policy controls adapt through shared settings rows", () => {
   expect(policy).not.toMatch(/@media[^{]*\b(?:inline-size|width)\b/);
   expect(settings).toMatch(/container: settings-row \/ inline-size;/);
   expect(settings).toMatch(
-    /@container settings-row \(inline-size < 35rem\)[\s\S]*?\.settings-row > :is\(\.settings-row-label, \.settings-row-control\)\s*\{\s*grid-column: 1 \/ -1;/,
+    /@container settings-row \(inline-size < 35rem\)[\s\S]*?\.settings-row:not\(\[data-stacked\]\)\s*\{\s*display: flex;\s*flex-wrap: wrap;/,
   );
 });
 

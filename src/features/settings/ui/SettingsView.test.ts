@@ -1020,7 +1020,7 @@ describe("settings pages", () => {
     });
     expect(
       container
-        .querySelector('[role="meter"][aria-label="Default account · 5 hours · left"]')
+        .querySelector('[role="meter"][aria-label="Claude Code · Default account · 5-hour · left"]')
         ?.getAttribute("aria-valuenow"),
     ).toBe("77");
     await act(async () =>
@@ -1028,7 +1028,7 @@ describe("settings pages", () => {
     );
     expect(
       container
-        .querySelector('[role="meter"][aria-label="Default account · 5 hours · used"]')
+        .querySelector('[role="meter"][aria-label="Claude Code · Default account · 5-hour · used"]')
         ?.getAttribute("aria-valuenow"),
     ).toBe("23");
     await act(async () =>
@@ -1076,16 +1076,16 @@ describe("settings pages", () => {
       () => expect(container.querySelectorAll("section.usage-account").length).toBeGreaterThan(0),
       { timeout: 15_000 },
     );
-    // The usage page sets colors from each account's actions menu and shows the current one checked.
+    // The usage page sets colors from each account's color menu and shows the current one checked.
     for (const [label, color] of [
       ["Default account", "Orange"],
       ["Work", "Pink"],
     ]) {
       const section = [...container.querySelectorAll<HTMLElement>("section.usage-account")].find(
-        (node) => node.getAttribute("aria-label") === `Claude · ${label}`,
+        (node) => node.getAttribute("aria-label") === `Claude Code · ${label}`,
       )!;
       await act(async () =>
-        section.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click(),
+        section.querySelector<HTMLButtonElement>('[aria-label="Account color"]')!.click(),
       );
       expect(
         document
@@ -1095,7 +1095,7 @@ describe("settings pages", () => {
           ?.getAttribute("aria-checked"),
       ).toBe("true");
       await act(async () =>
-        section.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click(),
+        section.querySelector<HTMLButtonElement>('[aria-label="Account color"]')!.click(),
       );
     }
   });

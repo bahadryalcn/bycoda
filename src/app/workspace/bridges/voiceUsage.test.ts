@@ -185,7 +185,7 @@ describe("voice usage tools", () => {
         {
           preset: "30d",
           window: { start: 5, end: 9 },
-          filters: { provider: [], account: [], model: ["gpt-5"], project: [], group: [] },
+          filters: { provider: [], account: [], model: ["gpt-5"], project: [], group: [], machine: [] },
           metric: "cost",
           resolution: "day",
         },

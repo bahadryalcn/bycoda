@@ -156,6 +156,7 @@ export const presentedOmitted = {
     "LoadingText",
     "Skeleton",
     "SkeletonBar",
+    "SkeletonList",
     "Spinner",
     "SurfaceLoading",
     "WorkingIndicator",
@@ -165,6 +166,7 @@ export const presentedOmitted = {
   chrome: [
     "ActionHost",
     "BrandMark",
+    "StateIllustration",
     "ExpandingSearch",
     "FloatingButtonGroup",
     "GithubMark",
