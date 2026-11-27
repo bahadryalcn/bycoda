@@ -42,13 +42,23 @@ commands and Codex Plan instructions retain their existing behavior. Bridge pres
 means offered transport metadata, not a ready browser/device or authorized external
 action. Workflow guidance is context, never new permission.
 
-`host/bykit/bykit-hint.ts` appends the short `bykit` guidance block (from the bykit
-contract) to the Host's per-turn runtime instructions, for every provider and delegated
-children, only when the owner's switch is on and a `bykit` executable resolves on PATH.
+`host/bykit/bykit-hint.ts` appends the short `bykit` guidance block (at most six lines: the strict
+no-write-scripts rule and the task-to-command mapping, mirrored in AGENTS.md "Working
+rhythm") to the Host's per-turn runtime instructions (sent once per provider thread, again when it changes), for every provider and delegated
+children, only when the owner's switch is on and bykit is usable: the binary bundled at
+`<host folder>/bin/bykit[.exe]` or one that resolves on PATH.
 The switch is the Settings > Tools `bykitInstructions` preference, published to the local
 Host with `host.settings.save` and kept in its `host_settings` table (on until published).
 The lookup has a 1.5 s deadline and its answer is cached for a minute; there is no
 configured path setting yet.
+
+Every Host package whose target has a bykit release (macOS arm64/x64, Linux x64, Windows
+x64) bundles the pinned bykit. `scripts/setup/bykit.mjs` is the one pin file (version and
+per-target sha256; a placeholder or mismatch fails `host/package.mjs` before any package is
+replaced); the binary is signed with the desktop helper's macOS identity or Windows
+certificate. `host/bykit/bykit-path.ts` finds it and `host/child-backend.ts` prepends its
+directory to the agent child's PATH (the existing `Path`/`PATH` key on Windows), so the
+bundled copy wins in agent sessions; terminals and the user's shell are untouched.
 
 Read-before-write, native owner approvals, disabled skills and provider restrictions
 remain authoritative. Browser fallback rules do not apply to uncertain sends,

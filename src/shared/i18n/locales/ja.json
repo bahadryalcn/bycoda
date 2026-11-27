@@ -12063,7 +12063,7 @@
   "bycoda Host status unavailable. Check the local host connection, then refresh.": "bycoda Host の状態を取得できません。ローカルの Host 接続を確認してから更新してください。",
   "Enter secret: {p0}": "シークレットを入力: {p0}",
   "Tell agents to use bykit": "エージェントに bykit を使わせる",
-  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "bykit がインストールされている場合、大きなファイル、差分、長いコマンド出力、一括編集に bykit を使うようエージェントに指示します。次のエージェントのターンから適用されます。",
+  "Agents are told to use bykit for large files, diffs, long command output and bulk edits. The Host bundles bykit and agent sessions run it ahead of any copy you installed. Applies to the next agent turn.": "大きなファイル、差分、長いコマンド出力、一括編集に bykit を使うようエージェントに指示します。ホストには bykit が同梱されており、エージェントのセッションでは、インストール済みのコピーより先にそれが実行されます。次のエージェントのターンから適用されます。",
   "Subagents: {p0}": "サブエージェント: {p0}",
   "The advisor is off for this message because bycoda Host is not responding.": "bycoda Host が応答していないため、このメッセージではアドバイザーがオフです。",
   "Confidence threshold": "信頼度のしきい値",

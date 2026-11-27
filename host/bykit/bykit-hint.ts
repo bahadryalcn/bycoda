@@ -1,19 +1,15 @@
 import { resolveOnPath } from "../mcp/hub/launch";
 import type { HostStore } from "../store";
+import { bundledBykitPath } from "./bykit-path";
 
 /** Agent instruction block from the bykit contract (SPEC.md); keep it short, it costs tokens per session. */
 export const BYKIT_HINT = [
-  "Use bykit when available and suitable for the operation.",
-  "Otherwise use a suitable tool, including read-only Python, Node or shell commands.",
-  "For authorized edits, patches and scoped scripts (including heredocs) are fine.",
-  "Preserve encoding, line endings and unrelated edits, and review the diff after writing.",
-  "`bykit read` for big files,",
-  "`bykit diff` for long diffs, `bykit run -- <cmd>` for long command output,",
-  "`bykit find` for searches that may return many results (usage counts,",
-  "repo-wide scans, before a bulk change), `bykit edit`/`replace` for multi-place",
-  "edits, `bykit json` for JSON (`--has` checks keys across locale files), `bykit sql` for SQLite, `bykit shot` for screenshots.",
-  "Output is paged: narrow by path first, then",
-  "`--page N`; `--all` only when the task needs every result.",
+  "Never write Python/Node/shell scripts or heredocs that write files (they change line endings); edit with your edit tool or `bykit edit`/`bykit replace`.",
+  "Use bykit for many-result searches (`bykit find`), big files (`bykit read --outline, --symbol, --lines A:B`),",
+  "locale keys (`bykit json DIR --has KEY`, `--missing-in`), SQLite (`bykit sql`), long output (`bykit run -- cmd`),",
+  "long diffs (`bykit diff`), PNGs (`bykit shot A --compare B`).",
+  "Read-only scripts only when no bykit command fits; name the gap in your report.",
+  "Output is paged: narrow by path first, then `--page N`.",
 ].join("\n");
 
 const LOOKUP_DEADLINE_MS = 1_500;
@@ -57,13 +53,16 @@ export async function saveBykitEnabled(store: SettingsStore, raw: unknown): Prom
 }
 
 /**
- * Whether a `bykit` executable resolves on PATH. The lookup has a deadline (a slow or
+ * Whether bykit is usable: the binary bundled with the Host, or one that resolves on PATH.
+ * The PATH lookup has a deadline (a slow or
  * hung PATH entry counts as absent) and the answer is reused for a minute.
  */
 export async function bykitAvailable(
   lookup: Lookup = (command) => resolveOnPath(command),
   now: () => number = Date.now,
+  bundled: () => string | undefined = () => bundledBykitPath(),
 ): Promise<boolean> {
+  if (bundled()) return true;
   if (cached && now() - cached.at < CACHE_MS) return cached.found;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<undefined>((resolve) => {
@@ -81,10 +80,11 @@ export async function bykitHint(
   store: SettingsStore,
   lookup?: Lookup,
   now?: () => number,
+  bundled?: () => string | undefined,
 ): Promise<string> {
   // An unreadable setting must not block the turn; the switch defaults to on.
   const enabled = await readBykitEnabled(store).catch(() => true);
-  return enabled && (await bykitAvailable(lookup, now)) ? BYKIT_HINT : "";
+  return enabled && (await bykitAvailable(lookup, now, bundled)) ? BYKIT_HINT : "";
 }
 
 export function resetBykitCache() {

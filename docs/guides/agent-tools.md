@@ -28,11 +28,15 @@ uses Computer Use and its app permissions.
 
 ## bykit
 
-Agents use `bykit` when it is available and suits the operation. They can use
-other tools when needed, including Python, Node and shell commands to inspect
-files. For authorized edits, patches and scripts that preserve encoding and
-line endings are also supported.
-Installing it takes effect within about a minute for sessions started afterward.
+Agents use `bykit` for searches with many results, big files, JSON and locale
+keys, SQLite, long command output and screenshots. They edit with their own edit
+tool or `bykit edit`/`bykit replace`, and do not write Python, Node or shell
+scripts that write files, because those can silently change line endings. A
+read-only script is allowed only when no bykit command fits, and the agent names
+the gap in its report.
+The Host ships a pinned bykit, so no install is needed; agent sessions run the
+bundled copy ahead of any bykit you installed yourself. Your own terminals and
+shell are not changed.
 **Settings > Tools > bykit** turns the instructions off or on for this computer's
 Host; the change applies from the next agent turn.
 

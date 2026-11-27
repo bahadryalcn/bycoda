@@ -12063,7 +12063,7 @@
   "bycoda Host status unavailable. Check the local host connection, then refresh.": "bycoda-Host-Status nicht verfügbar. Prüfen Sie die lokale Host-Verbindung und aktualisieren Sie dann.",
   "Enter secret: {p0}": "Geheimnis eingeben: {p0}",
   "Tell agents to use bykit": "Agenten anweisen, bykit zu nutzen",
-  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "Wenn bykit installiert ist, werden Agenten angewiesen, es für große Dateien, Diffs, lange Befehlsausgaben und Massenänderungen zu nutzen. Gilt ab dem nächsten Agentenzug.",
+  "Agents are told to use bykit for large files, diffs, long command output and bulk edits. The Host bundles bykit and agent sessions run it ahead of any copy you installed. Applies to the next agent turn.": "Agenten werden angewiesen, bykit für große Dateien, Diffs, lange Befehlsausgaben und Massenänderungen zu nutzen. Der Host bringt bykit mit, und Agentensitzungen führen es vor einer selbst installierten Kopie aus. Gilt ab dem nächsten Agentenzug.",
   "Subagents: {p0}": "Subagenten: {p0}",
   "The advisor is off for this message because bycoda Host is not responding.": "Der Berater ist für diese Nachricht deaktiviert, weil bycoda Host nicht antwortet.",
   "Confidence threshold": "Konfidenzschwelle",

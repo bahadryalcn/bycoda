@@ -12072,7 +12072,7 @@
   "bycoda Host status unavailable. Check the local host connection, then refresh.": "bycoda Host status unavailable. Check the local host connection, then refresh.",
   "Enter secret: {p0}": "Enter secret: {p0}",
   "Tell agents to use bykit": "Tell agents to use bykit",
-  "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.": "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.",
+  "Agents are told to use bykit for large files, diffs, long command output and bulk edits. The Host bundles bykit and agent sessions run it ahead of any copy you installed. Applies to the next agent turn.": "Agents are told to use bykit for large files, diffs, long command output and bulk edits. The Host bundles bykit and agent sessions run it ahead of any copy you installed. Applies to the next agent turn.",
   "Subagents: {p0}": "Subagents: {p0}",
   "The advisor is off for this message because bycoda Host is not responding.": "The advisor is off for this message because bycoda Host is not responding.",
   "Confidence threshold": "Confidence threshold",

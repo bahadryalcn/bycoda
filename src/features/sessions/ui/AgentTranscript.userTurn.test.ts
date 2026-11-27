@@ -31,12 +31,12 @@ describe("user turn layout", () => {
     );
   });
 
-  it("places the actions beside the bubble, before it, with the time leading", () => {
+  it("places the actions under the bubble with the time leading", () => {
     const markup = render([{ id: "u", role: "user", text: "Hello", startedAt: Date.now() }]);
 
     const actions = markup.indexOf("user-message-actions");
     expect(actions).toBeGreaterThan(-1);
-    expect(actions).toBeLessThan(markup.indexOf("user-message-bubble"));
+    expect(actions).toBeGreaterThan(markup.indexOf("user-message-bubble"));
     expect(markup.indexOf("<time")).toBeGreaterThan(actions);
     expect(markup.indexOf("<time")).toBeLessThan(markup.indexOf('aria-label="Copy message"'));
   });
