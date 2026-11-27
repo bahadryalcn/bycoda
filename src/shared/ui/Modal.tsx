@@ -275,9 +275,7 @@ export function ModalPanel({
   const descriptionId = description ? `${uid}-desc` : undefined;
   const sheet = placement === "end";
   const bottom = placement === "bottom";
-  // A workspace panel is one opaque ground shared by header and body, never the popup glass.
-  const opaque = surface === "workspace-panel";
-  const docked = sheet && opaque;
+  const docked = sheet && surface === "workspace-panel";
   const size = maximized ? "full" : requestedSize;
   const settings = requestedSize === "settings";
   const heightClass = maximized
@@ -362,14 +360,15 @@ export function ModalPanel({
                         : bottom
                           ? `${floatingFrameClassName} max-h-[calc(100dvh-40px)] rounded-b-none border border-b-0`
                           : `${floatingFrameClassName} border ${heightClass} ${fitViewport ? "max-h-[calc(100dvh-32px)]" : "max-h-[min(80dvh,calc(100dvh-var(--modal-top)))]"}`,
-                opaque && !popupHost ? "bg-(--ui-surface-panel)" : "",
+                // A workspace panel paints its own ground so the header matches the panel body.
+                surface === "workspace-panel" && !popupHost ? "bg-(--ui-surface-panel)" : "",
                 minimalHeader && MINIMAL_CLOSE_VARS,
                 className,
               ]
                 .filter(Boolean)
                 .join(" ")}
             >
-              {!popupHost && !opaque ? <PopupBackdrop frosted={frosted} /> : null}
+              {!popupHost && (!docked || expanded) ? <PopupBackdrop frosted={frosted} /> : null}
               <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
                 <PanelHeader
                   className={
