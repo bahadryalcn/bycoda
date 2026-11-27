@@ -3,6 +3,7 @@ import {
   actionContentScopeAttributes,
 } from "../../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
+import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind";
 import { Text } from "../../../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
@@ -27,6 +28,10 @@ import { Row, SettingsFeedback } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import styles from "./BackgroundLibrary.module.css";
 import { generatorSession } from "./themeGeneratorSession";
+import { reclaimUnreferencedBackgrounds } from "../../../runtime/reclaimBackgrounds";
+import { backgroundDisplayName, backgroundKindLabel } from "../../../model/backgroundNames";
+import { SaveBackgroundButton } from "./SaveBackgroundButton";
+import { OverflowTooltip } from "../../../../../shared/ui/Tooltip";
 
 /**
  * Every image applied before, generated or added, as thumbnails: click to apply it again, delete
@@ -78,6 +83,8 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
           !saveSavedThemes(dropImageReference(currentThemes, image.id))
         )
           throw new Error(t("Could not save the theme."));
+        // Reclaim files the deleted design left behind; failures are logged inside.
+        void reclaimUnreferencedBackgrounds();
       },
     }).catch((error: unknown) => console.error(error));
   };
@@ -104,6 +111,8 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
         <ul className={styles.grid} aria-label={t("Library")}>
           {images.map((image) => {
             const generated = image.source === "generated";
+            const name = backgroundDisplayName(image.path, themes, image.id);
+            const kind = backgroundKindLabel(image.path);
             return (
               <li key={image.id} {...actionContentScopeAttributes(styles.item)}>
                 <Button
@@ -115,17 +124,23 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                   loading={applyingId === image.id}
                   loadingLabel={t("Applying…")}
                   selectionIndicator="accent-ring"
-                  aria-label={generated ? t("Generated image") : t("Added image")}
+                  aria-label={name === kind ? name : `${name} · ${kind}`}
                   tooltip={image.prompt ?? undefined}
                   onClick={() => apply(image)}
                 >
-                  <img
-                    src={libraryImageSrc(image)}
-                    alt=""
-                    draggable={false}
-                    loading="lazy"
-                    decoding="async"
-                  />
+                  {chatBackgroundKind(image.path) === "image" ? (
+                    <img
+                      src={libraryImageSrc(image)}
+                      alt=""
+                      draggable={false}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <Text size="caption" tone="muted">
+                      {kind}
+                    </Text>
+                  )}
                   {generated ? (
                     <Text
                       size="inherit"
@@ -138,6 +153,16 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                     </Text>
                   ) : null}
                 </Button>
+                <OverflowTooltip label={name}>
+                  <Text as="div" size="caption" weight="medium" truncate className="max-w-full">
+                    {name}
+                  </Text>
+                </OverflowTooltip>
+                <SaveBackgroundButton
+                  path={image.path}
+                  image={image}
+                  disabled={appearance.chatBackgroundBusy || applyingId !== null || loading}
+                />
                 <Button
                   iconOnly
                   size="sm"
@@ -147,8 +172,17 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                     styles.remove,
                   )}
                   label={t("Delete image")}
-                  disabled={appearance.chatBackgroundBusy || applyingId !== null || loading}
-                  disabledReason={t("Wait for the current operation to finish")}
+                  disabled={
+                    appearance.chatBackgroundBusy ||
+                    applyingId !== null ||
+                    loading ||
+                    themes.some((theme) => theme.imageId === image.id)
+                  }
+                  disabledReason={
+                    themes.some((theme) => theme.imageId === image.id)
+                      ? t("This media is used by a saved design. Delete the design first.")
+                      : t("Wait for the current operation to finish")
+                  }
                   onClick={() => remove(image)}
                 >
                   <Trash2 />

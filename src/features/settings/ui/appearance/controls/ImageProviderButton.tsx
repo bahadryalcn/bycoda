@@ -31,13 +31,13 @@ export function ImageProviderButton({
         aria-label={`${t("Background image")}: ${selected.label}`}
         size="sm"
         variant="ghost"
+        startIcon={selected.icon}
         pressed={value !== "none"}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        {selected.icon}
-        {value === "none" ? t("Background image") : selected.label}
+        {t("Image")}: {selected.label}
       </Button>
       {open ? (
         <DropdownMenu

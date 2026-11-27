@@ -1,3 +1,8 @@
+import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind";
+import { ChatBackgroundMedia } from "../../ChatBackgroundMedia";
+import { DesignStudioButton } from "../controls/DesignStudioButton";
+import { BackgroundHistory } from "../../BackgroundHistory";
+import { BackgroundName } from "../../BackgroundName";
 import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
@@ -76,7 +81,10 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
   const covered = effect !== "none";
   const glassOn = IS_LINUX || appearance.windowGlass;
   const glassApplies = glassOn && !light && !covered;
-  const imageSrc = chatBackgroundSrc(appearance.chatBackgroundPath);
+  const imageSrc =
+    chatBackgroundKind(appearance.chatBackgroundPath) === "image"
+      ? chatBackgroundSrc(appearance.chatBackgroundPath)
+      : null;
   const livePercent = Math.round(intensity * 100);
   return (
     <AppearanceSection id="backgrounds" title={t("Backgrounds")}>
@@ -166,7 +174,7 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
           },
           {
             id: "image",
-            name: t("Image"),
+            name: t("Chat background"),
             enabled: Boolean(appearance.chatBackgroundPath),
             strength: appearance.chatBackgroundPath
               ? `${t("On")} · ${appearance.chatBackgroundBlur}px`
@@ -192,6 +200,13 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
               <Group
                 id="live-background"
                 title={t("Live background")}
+                action={
+                  <DesignStudioButton
+                    appearance={appearance}
+                    kind="scene"
+                    label={t("Create scene")}
+                  />
+                }
                 modified={
                   effect !== LIVE_BACKGROUND_DEFAULT ||
                   intensity !== LIVE_BACKGROUND_INTENSITY_DEFAULT
@@ -236,13 +251,14 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
 export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
   const src = chatBackgroundSrc(appearance.chatBackgroundPath);
+  const media = chatBackgroundKind(appearance.chatBackgroundPath) !== "image";
   const hasImage = Boolean(appearance.chatBackgroundPath && src);
   const emptyVisibility = Math.round(appearance.chatBackgroundEmptyOpacity * 100);
   const sessionVisibility = Math.round(appearance.chatBackgroundSessionOpacity * 100);
   const busy = appearance.chatBackgroundBusy;
   const [decoded, setDecoded] = useState<{ src: string; state: "ready" | "error" } | null>(null);
   useEffect(() => {
-    if (!src) return;
+    if (!src || media) return;
     let active = true;
     const image = new Image();
     image.onload = () => {
@@ -257,8 +273,8 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
       image.onload = null;
       image.onerror = null;
     };
-  }, [src]);
-  const imageState = decoded?.src === src ? decoded.state : "loading";
+  }, [src, media]);
+  const imageState = media ? "ready" : decoded?.src === src ? decoded.state : "loading";
   const modified =
     appearance.preferences.chatBackgroundLayer === false ||
     Math.round(appearance.chatBackgroundEmptyOpacity * 100) !==
@@ -283,6 +299,12 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
     <Group
       id="chat-background"
       title={t("Chat background")}
+      action={
+        <DesignStudioButton appearance={appearance} kind="image" label={t("Create background")} />
+      }
+      description={t(
+        "Images, videos and HTML scenes stay on this device. Ask in chat to create or revise a scene, then apply it.",
+      )}
       modified={modified}
       resetLabel={t("Reset background settings")}
       onReset={() => {
@@ -307,6 +329,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
               data-project-chat-background="false"
               data-session-empty="true"
             >
+              {media ? <ChatBackgroundMedia path={appearance.chatBackgroundPath} /> : null}
               {imageState === "loading" ? (
                 <div className="p-2">
                   <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
@@ -319,6 +342,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
           ) : undefined}
         </ImageDropZone>
         <div className={imageStyles.side}>
+          <BackgroundName path={appearance.chatBackgroundPath} />
           <div className={imageStyles.actions}>
             {hasImage ? (
               <Button
@@ -340,7 +364,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
                 startIcon={<ImagePlus className="icon-sm" aria-hidden />}
                 stableWidth
               >
-                {t("Choose image")}
+                {t("Choose background")}
               </Button>
             )}
           </div>
@@ -376,6 +400,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
         />
       </Row>
       <BackgroundLibrary appearance={appearance} />
+      <BackgroundHistory path={appearance.chatBackgroundPath} disabled={busy} onChoose={choose} />
       {hasImage && imageState === "error" ? (
         <SettingsFeedback state="error">
           {t("Image could not be loaded. Choose another image or remove it.")}
@@ -414,22 +439,24 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
               onChange={appearance.onChatBackgroundScope}
             />
           </Row>
-          <Row
-            stacked
-            label={t("Background effect")}
-            info={NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[appearance.newThreadBackgroundEffect]}
-          >
-            <Segmented
+          {!media ? (
+            <Row
+              stacked
               label={t("Background effect")}
-              value={appearance.newThreadBackgroundEffect}
-              options={NEW_THREAD_BACKGROUND_EFFECTS.map((effect) => ({
-                value: effect,
-                label: NEW_THREAD_BACKGROUND_EFFECT_LABELS[effect],
-              }))}
-              onChange={appearance.onNewThreadBackgroundEffect}
-              optionIdPrefix="new-thread-background-effect"
-            />
-          </Row>
+              info={NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[appearance.newThreadBackgroundEffect]}
+            >
+              <Segmented
+                label={t("Background effect")}
+                value={appearance.newThreadBackgroundEffect}
+                options={NEW_THREAD_BACKGROUND_EFFECTS.map((effect) => ({
+                  value: effect,
+                  label: NEW_THREAD_BACKGROUND_EFFECT_LABELS[effect],
+                }))}
+                onChange={appearance.onNewThreadBackgroundEffect}
+                optionIdPrefix="new-thread-background-effect"
+              />
+            </Row>
+          ) : null}
           <Row
             label={t("Empty chat visibility")}
             info={t("Background strength before a chat has messages.")}

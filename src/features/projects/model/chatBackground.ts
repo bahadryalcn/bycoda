@@ -9,8 +9,8 @@ export async function pickAndSaveChatBackground(): Promise<string | null> {
     title: t("Choose background"),
     filters: [
       {
-        name: t("Images"),
-        extensions: ["png", "jpg", "jpeg", "gif", "webp"],
+        name: t("Backgrounds"),
+        extensions: ["png", "jpg", "jpeg", "gif", "webp", "mp4", "webm", "html", "htm"],
       },
     ],
   });
@@ -34,8 +34,8 @@ export async function pickAndSaveProjectChatBackground(project: string): Promise
     title: t("Choose background"),
     filters: [
       {
-        name: t("Images"),
-        extensions: ["png", "jpg", "jpeg", "gif", "webp"],
+        name: t("Backgrounds"),
+        extensions: ["png", "jpg", "jpeg", "gif", "webp", "mp4", "webm", "html", "htm"],
       },
     ],
   });

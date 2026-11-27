@@ -23,6 +23,7 @@ export {
   saveChangesView,
   saveShowExcludedFiles,
   subscribeChatBackgroundPath,
+  subscribeThemeStorage,
   subscribeShowExcludedFiles,
   subscribeTranscriptAnchor,
   subscribeTranscriptLayout,

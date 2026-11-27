@@ -12,6 +12,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 struct Preview {
     content: String,
     root: Option<PathBuf>,
+    background: bool,
 }
 
 enum PreviewState {
@@ -190,6 +191,7 @@ pub fn create_html_preview(
     token: String,
     path: String,
     content: String,
+    still: Option<bool>,
 ) -> Result<String, String> {
     validate_token(&token)?;
     let owner = crate::control::receipts::capture(&window)?;
@@ -199,7 +201,7 @@ pub fn create_html_preview(
             .map_err(|e| e.to_string())?
             .begin(&owner, &token)
     })?;
-    let result = make_preview(path, content);
+    let result = make_preview_with(path, content, still.unwrap_or(false));
     owner.with_live(|| {
         previews()
             .lock()
@@ -208,9 +210,24 @@ pub fn create_html_preview(
     })
 }
 
+#[cfg(test)]
 fn make_preview(path: String, content: String) -> Result<Preview, String> {
+    make_preview_with(path, content, false)
+}
+
+fn make_preview_with(path: String, content: String, still: bool) -> Result<Preview, String> {
     if content.len() > 16 * 1024 * 1024 {
         return Err("HTML preview is limited to 16 MiB.".into());
+    }
+    if path.starts_with("background://") {
+        if content.trim().is_empty() || content.len() > 2 * 1024 * 1024 {
+            return Err("HTML background must contain 1 to 2097152 UTF-8 bytes".into());
+        }
+        return Ok(Preview {
+            content: background_document(&content, still)?,
+            root: None,
+            background: true,
+        });
     }
     let root = if path.starts_with("remote://") {
         None // Remote HTML is already read by the owning host; never read its assets locally.
@@ -225,7 +242,95 @@ fn make_preview(path: String, content: String) -> Result<Preview, String> {
                 .to_path_buf(),
         )
     };
-    Ok(Preview { content, root })
+    Ok(Preview {
+        content,
+        root,
+        background: false,
+    })
+}
+
+/// The trusted outer document owns frame-src. Authored code only runs in its opaque
+/// srcdoc child: attempts to navigate that child are governed by this parent policy.
+/// Neither document has local assets, network, forms, popups or a native bridge.
+fn background_document(content: &str, still: bool) -> Result<String, String> {
+    // CSP covers resource fetches. WebRTC has no reliable connect-src enforcement;
+    // retire its constructors before authored code. CSP frame-src does not cover
+    // about:blank, so the guard itself refuses frame/object/embed creation to stop a
+    // fresh realm with intact constructors; worker and popup denial cover the rest.
+    let guard = include_str!("html_preview/background_guard.js");
+    // Still mode makes the scene see reduced motion, so it draws one frame and stops.
+    let still_motion = if still {
+        format!(
+            "<script>{}</script>",
+            include_str!("html_preview/still_motion.js")
+        )
+    } else {
+        String::new()
+    };
+    let inner = format!(
+        r#"<!doctype html><meta http-equiv="Content-Security-Policy" content="frame-src 'none'"><script>{guard}</script>{still_motion}{content}"#
+    );
+    let escaped = inner
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    // Escaping can expand the 2 MiB source about fivefold; bound the final document.
+    if escaped.len() > 12 * 1024 * 1024 {
+        return Err("HTML background is too large once escaped".into());
+    }
+    Ok(format!(
+        r#"<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src 'none'; connect-src 'none'; frame-src about:; child-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body,iframe{{margin:0;width:100%;height:100%;border:0;overflow:hidden}}</style><iframe title="Background" sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="{escaped}"></iframe>"#
+    ))
+}
+
+#[cfg(test)]
+mod background_tests {
+    use super::*;
+
+    #[test]
+    fn offline_scene_has_no_file_root_and_cannot_escape_srcdoc() {
+        let authored =
+            r#"</iframe><script>fetch('https://example.com')</script><img src="file:///secret">"#;
+        let preview = make_preview("background://scene.html".into(), authored.into()).unwrap();
+        assert!(preview.root.is_none());
+        assert!(preview
+            .content
+            .contains("frame-src about:; child-src 'none'; worker-src 'none'"));
+        assert!(preview.content.contains("connect-src 'none'"));
+        assert!(preview.content.contains("sandbox=\"allow-scripts\""));
+        assert!(!preview.content.contains("<script>"));
+        assert!(preview.content.contains("&lt;/iframe&gt;"));
+        assert!(preview.content.contains("RTCPeerConnection"));
+        for part in [
+            "&quot;webkit&quot;",
+            "MutationObserver",
+            "contentWindow",
+            "createElement",
+        ] {
+            assert!(preview.content.contains(part), "{part}");
+        }
+    }
+
+    #[test]
+    fn escaped_background_document_is_bounded() {
+        let heavy = "\"".repeat(2 * 1024 * 1024);
+        assert!(background_document(&heavy, false).is_err());
+        assert!(background_document("<b>ok</b>", false).is_ok());
+    }
+
+    #[test]
+    fn still_mode_reports_reduced_motion_and_live_mode_does_not() {
+        let still = background_document("<b>ok</b>", true).unwrap();
+        let live = background_document("<b>ok</b>", false).unwrap();
+        assert!(still.contains("prefers-reduced-motion"));
+        assert!(!live.contains("prefers-reduced-motion"));
+        // The override runs after the guard and before authored content.
+        let guard = still.find("RTCPeerConnection").unwrap();
+        let override_at = still.find("prefers-reduced-motion").unwrap();
+        let authored = still.find("&lt;b&gt;ok").unwrap();
+        assert!(guard < override_at && override_at < authored);
+    }
 }
 
 #[tauri::command]
@@ -575,12 +680,24 @@ pub fn respond_async(request: tauri::http::Request<Vec<u8>>, responder: tauri::U
 }
 
 pub fn respond(request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
+    let token = request
+        .uri()
+        .path()
+        .trim_start_matches('/')
+        .split('/')
+        .next()
+        .unwrap_or("");
+    let background = previews().lock().ok().is_some_and(|registry| {
+        registry.entries.get(token).is_some_and(
+            |record| matches!(&record.state, PreviewState::Ready(preview) if preview.background),
+        )
+    });
     let result = if request.method() == tauri::http::Method::GET {
         preview_content(request.uri().path(), requested_range(&request))
     } else {
         Err("Unsupported preview request".into())
     };
-    match result {
+    let mut response = match result {
         Ok(served) => preview_response(
             served.status,
             served.body,
@@ -588,7 +705,17 @@ pub fn respond(request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<
             served.content_range,
         ),
         Err(error) => preview_response(404, error.into_bytes(), "text/plain; charset=utf-8", None),
+    };
+    if background {
+        response.headers_mut().insert(
+            "X-DNS-Prefetch-Control",
+            tauri::http::HeaderValue::from_static("off"),
+        );
+        response.headers_mut().insert("Content-Security-Policy", tauri::http::HeaderValue::from_static(
+            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src 'none'; connect-src 'none'; frame-src about:; child-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; sandbox allow-scripts"
+        ));
     }
+    response
 }
 
 /// The `Range` the page asked for. `If-Range` names a validator this server cannot check

@@ -67,7 +67,7 @@ it("shows read failure and retry while keeping existing images", () => {
   state.library.error = "Offline";
   render();
   expect(host.textContent).toContain("Could not load the image library");
-  expect(host.querySelector('button[aria-label="Added image"]')).not.toBeNull();
+  expect(host.querySelector('button[aria-label="Image"]')).not.toBeNull();
   act(() =>
     [...host.querySelectorAll("button")].find((button) => button.textContent === "Retry")!.click(),
   );
@@ -79,7 +79,7 @@ it("revokes old image intent when applying a library image", async () => {
   generatorSession.select(1);
   render(false, choose);
   await act(async () =>
-    host.querySelector<HTMLButtonElement>('button[aria-label="Added image"]')!.click(),
+    host.querySelector<HTMLButtonElement>('button[aria-label="Image"]')!.click(),
   );
   expect(generatorSession.selected()).toBeNull();
   expect(choose).toHaveBeenCalledWith("/fixture.png", { libraryId: "image" });
@@ -89,7 +89,7 @@ it("disables apply and delete while the background is changing", () => {
   render(true);
   expect(
     host
-      .querySelector<HTMLButtonElement>('button[aria-label="Added image"]')!
+      .querySelector<HTMLButtonElement>('button[aria-label="Image"]')!
       .getAttribute("aria-disabled"),
   ).toBe("true");
   expect(

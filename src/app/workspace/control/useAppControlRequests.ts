@@ -422,6 +422,40 @@ export function useAppControlRequests({
           if (isProjectLockedIn(getGroupLockView().lock, source.cwd))
             throw new Error("Conversation project is locked.");
           if (
+            ["ui.background.apply", "ui.background.read", "ui.background.save"].includes(
+              payload.action,
+            )
+          ) {
+            const {
+              applyConversationBackground,
+              readConversationBackground,
+              saveConversationBackground,
+            } = await import("../../../features/settings/public/backgroundControl");
+            const valid = () =>
+              !disposed &&
+              sessionsRef.current.some(
+                (current) => current.id === source.id && current.cwd === source.cwd,
+              ) &&
+              !isProjectLockedIn(getGroupLockView().lock, source.cwd);
+            return (
+              payload.action === "ui.background.read"
+                ? readConversationBackground
+                : payload.action === "ui.background.save"
+                  ? saveConversationBackground
+                  : applyConversationBackground
+            )(
+              payload.input,
+              source.cwd,
+              async () =>
+                valid() &&
+                (await invoke<boolean>("control_desktop_authorize_effect", {
+                  id: payload.id,
+                  action: payload.action,
+                })) &&
+                valid(),
+            );
+          }
+          if (
             [
               "ssh.workspace.catalog.read",
               "ssh.workspace.review",

@@ -8,6 +8,7 @@
 @import "./transcript-surface.css";
 @import "./working-row.css";
 @import "./inbox-avatar.css";
+@import "./appearance-creation.css";
 @import "./file-references.css";
 
 /* Desktop UI classes come from product code under src/ and the root entry documents. The scan
@@ -1587,7 +1588,7 @@ html.has-native-glass:not(.theme-light) .chat-pane-background {
 /* Where the shared artwork sits inside a split pane, written on this layer by
    syncPaneBackground. Custom properties inherit, so without this reset a divider
    drag restyled the whole transcript on every frame; only the artwork reads them. */
-.chat-pane-background > :not(.gradient-blur-background) {
+.chat-pane-background > :not(.gradient-blur-background):not(.chat-background-media) {
   --chat-background-left: initial;
   --chat-background-top: initial;
   --chat-background-width: initial;
@@ -1812,6 +1813,35 @@ html.chat-background-layer-off .gradient-blur-background {
 html.chat-background-layer-off .gradient-blur-background::after,
 html.chat-background-layer-off .gradient-blur-background-strong {
   display: none;
+}
+
+.chat-background-media {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: var(--chat-media-opacity, 1);
+  filter: blur(var(--chat-media-blur, 0px));
+}
+.chat-background-media > video,
+.chat-background-media > iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  object-fit: cover;
+  pointer-events: none;
+}
+.chat-pane-background > .chat-background-media {
+  left: var(--chat-background-left, 0);
+  top: var(--chat-background-top, 0);
+  width: var(--chat-background-width, 100%);
+  height: var(--chat-background-height, 100%);
+  z-index: -1;
+  opacity: var(--chat-background-layer-opacity, var(--chat-background-empty-opacity));
+  filter: blur(var(--chat-background-blur));
+}
+.chat-pane-background[data-session-empty="false"] > .chat-background-media {
+  opacity: var(--chat-background-layer-opacity, var(--chat-background-session-opacity));
 }
 
 .transcript-turn {

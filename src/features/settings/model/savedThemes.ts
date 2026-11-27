@@ -17,6 +17,10 @@ export type SavedTheme = {
   look: AppearanceSnapshot;
   /** Library image id; absent when the look has no chat background. */
   imageId?: string;
+  /** Label-only aliases for legacy selections; never file authority or portable dependencies. */
+  backgroundPaths?: string[];
+  /** Background/motion creations share the named look catalog and protected media. */
+  creation?: { kind: "image" | "scene" | "motion"; prompt: string };
 };
 
 export const SAVED_THEME_NAME_MAX = 40;
@@ -25,6 +29,19 @@ const KEY = "bycoda.savedThemes.v1";
 const IMAGE_ID = /^[0-9a-f]{24}$/;
 const listeners = createStore();
 let cache: { raw: string | null; themes: SavedTheme[] } | undefined;
+
+function normalizeCreation(value: unknown): { creation?: SavedTheme["creation"] } {
+  if (!value || typeof value !== "object") return {};
+  const raw = value as Record<string, unknown>;
+  if (!["image", "scene", "motion"].includes(String(raw.kind)) || typeof raw.prompt !== "string")
+    return {};
+  return {
+    creation: {
+      kind: raw.kind as "image" | "scene" | "motion",
+      prompt: truncateGraphemes(raw.prompt, 2000),
+    },
+  };
+}
 
 export function normalizeThemeName(value: unknown): string {
   const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
@@ -58,6 +75,17 @@ export function normalizeSavedThemes(input: unknown): SavedTheme[] {
       ...(typeof raw.imageId === "string" && IMAGE_ID.test(raw.imageId)
         ? { imageId: raw.imageId }
         : {}),
+      ...normalizeCreation(raw.creation),
+      ...(Array.isArray(raw.backgroundPaths)
+        ? {
+            backgroundPaths: raw.backgroundPaths
+              .filter(
+                (path): path is string =>
+                  typeof path === "string" && path.length > 0 && path.length <= 4096,
+              )
+              .slice(0, 8),
+          }
+        : {}),
     });
     if (themes.length >= SAVED_THEMES_MAX) break;
   }
@@ -90,6 +118,7 @@ export function saveSavedThemes(themes: readonly SavedTheme[]): boolean {
     kept.length > 0 ? JSON.stringify(kept) : null,
     "saved-themes",
     () => listeners.notify(),
+    false,
   );
 }
 
@@ -124,6 +153,7 @@ export type SavedThemeInput = {
   name: string;
   look: AppearanceSnapshot;
   imageId?: string;
+  creation?: SavedTheme["creation"];
 };
 
 export function addSavedTheme(
@@ -141,6 +171,7 @@ export function addSavedTheme(
     updatedAt: now,
     look: input.look,
     ...(input.imageId ? { imageId: input.imageId } : {}),
+    ...normalizeCreation(input.creation),
   };
   return [...themes, theme];
 }
@@ -167,12 +198,15 @@ export function overwriteSavedTheme(
 ): SavedTheme[] {
   return themes.map((theme) => {
     if (theme.id !== id) return theme;
-    const { imageId: _previous, ...rest } = theme;
+    const { imageId: _previous, backgroundPaths: previousPaths, ...rest } = theme;
     return {
       ...rest,
       look: input.look,
       updatedAt: now,
       ...(input.imageId ? { imageId: input.imageId } : {}),
+      ...(input.imageId === theme.imageId && previousPaths
+        ? { backgroundPaths: previousPaths }
+        : {}),
     };
   });
 }
@@ -185,7 +219,7 @@ export function removeSavedTheme(themes: readonly SavedTheme[], id: string): Sav
 export function dropImageReference(themes: readonly SavedTheme[], imageId: string): SavedTheme[] {
   return themes.map((theme) => {
     if (theme.imageId !== imageId) return theme;
-    const { imageId: _removed, ...rest } = theme;
+    const { imageId: _removed, backgroundPaths: _paths, ...rest } = theme;
     return rest;
   });
 }

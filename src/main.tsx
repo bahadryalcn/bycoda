@@ -16,6 +16,7 @@ import { listen } from "@tauri-apps/api/event";
 import { restoreTransferredDrafts } from "./app/model/windowTransfer";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { activateWindowAppearance, initAppearance } from "./features/settings/model/appearance";
+import { scheduleBackgroundReclaim } from "./features/settings/runtime/reclaimBackgrounds";
 import { initInteractionTint } from "./features/settings/model/interactionTint";
 import { initWorkingIndicator } from "./features/settings/model/workingIndicator";
 import { initScrollbarStyle } from "./features/settings/model/scrollbarStyle";
@@ -206,6 +207,8 @@ void bootstrap(
       tabs: resumed?.tabs.length ?? null,
       saveBlocked: workspaceSnapshotWriteBlocked(),
     });
+    // Only the main workspace window sweeps, so a tool window never races its siblings.
+    if (!windowTransfer && !toolWindow && !hostToolsWindow) scheduleBackgroundReclaim();
     const installedUpdate =
       windowTransfer || toolWindow || hostToolsWindow ? null : consumeInstalledUpdate();
     if (windowTransfer) restoreTransferredDrafts(windowTransfer);

@@ -58,7 +58,7 @@ it("selects either image provider, labels the trigger, and disables generation w
   await pick("Codex");
   expect(changed).toHaveBeenLastCalledWith("codex");
   expect(trigger().getAttribute("aria-label")).toBe("Background image: Codex");
-  expect(trigger().textContent).toBe("Codex");
+  expect(trigger().textContent).toBe("Image: Codex");
   expect(trigger().querySelector("img")?.getAttribute("src")).toBe(HARNESS_ICONS.codex);
   expect(document.activeElement).toBe(trigger());
   await open();
@@ -66,14 +66,14 @@ it("selects either image provider, labels the trigger, and disables generation w
   await pick("Gemini");
   expect(changed).toHaveBeenLastCalledWith("gemini");
   expect(trigger().getAttribute("aria-label")).toBe("Background image: Gemini");
-  expect(trigger().textContent).toBe("Gemini");
+  expect(trigger().textContent).toBe("Image: Gemini");
   await open();
   expect(document.querySelector('[aria-label="Gemini"][aria-checked="true"]')).not.toBeNull();
   await pick("None");
   expect(changed).toHaveBeenLastCalledWith("none");
   expect(trigger().getAttribute("aria-pressed")).toBe("false");
   expect(trigger().getAttribute("aria-label")).toBe("Background image: None");
-  expect(trigger().textContent).toBe("Background image");
+  expect(trigger().textContent).toBe("Image: None");
 });
 
 it("keeps keyboard navigation and returns focus on Escape without changing provider", async () => {

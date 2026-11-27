@@ -3,6 +3,7 @@ import {
   actionContentScopeAttributes,
 } from "../../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
+import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind";
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
@@ -90,7 +91,7 @@ function SavedThemeMenu({
  */
 export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
-  const themes = useSavedThemes();
+  const themes = useSavedThemes().filter((theme) => !theme.creation);
   const { images } = useBackgroundLibrary();
   const { confirm, dialog } = useConfirm();
   const [renaming, setRenaming] = useState<SavedTheme | null>(null);
@@ -105,11 +106,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
       const outcome = await applySavedTheme(appearance, theme);
       writeGeneratorValue("selectedLookName", theme.name, "");
       if (outcome === "image-missing")
-        setNotice({
-          text: t(
-            "This theme's image is no longer in the library. The rest of the look was applied.",
-          ),
-        });
+        setNotice({ text: t("Saved media is missing. Your current design is unchanged.") });
     } catch (error) {
       setNotice({ text: t("Could not apply the theme."), detail: errorText(error) });
     } finally {
@@ -188,7 +185,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                       style={{ "--surface-user-color": color } as React.CSSProperties}
                     />
                   ))}
-                  {image ? (
+                  {image && chatBackgroundKind(image.path) === "image" ? (
                     <img
                       src={libraryImageSrc(image)}
                       alt=""

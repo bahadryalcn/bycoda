@@ -713,6 +713,8 @@ const handlers: Record<
   "appearance.themeSuggestions": handleAppearanceRpc,
   "appearance.backgroundSuggestions": handleAppearanceRpc,
   "appearance.backgroundImage": handleAppearanceRpc,
+  "appearance.createDesign": handleAppearanceRpc,
+  "appearance.cancelDesign": handleAppearanceRpc,
   "appearance.cancelGeneration": handleAppearanceRpc,
   "assistant.builder.interview": handleAssistantBuilderRpc,
   "assistant.builder.avatarGenerate": handleAssistantBuilderRpc,

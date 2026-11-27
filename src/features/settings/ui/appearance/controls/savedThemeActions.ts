@@ -25,6 +25,9 @@ import { saveWorkingIndicator } from "../../../model/workingIndicator";
 import { saveWorkspaceBackground } from "../../../model/workspaceBackground";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { generatorSession } from "./themeGeneratorSession";
+import { designLook } from "../../../model/designs";
+import { loadChatBackgroundPath } from "../../../model/appearance";
+import { t } from "../../../../../shared/i18n";
 
 const percent = (fraction: number) => Math.round(fraction * 100);
 
@@ -87,11 +90,7 @@ export function applyAppearanceSnapshot(appearance: AppearanceSettings, look: Ap
 async function currentImageId(appearance: AppearanceSettings): Promise<string | undefined> {
   const path = appearance.chatBackgroundPath;
   if (!path) return undefined;
-  try {
-    return (await ensureCurrentLibraryImage(path)).id;
-  } catch {
-    return undefined;
-  }
+  return (await ensureCurrentLibraryImage(path)).id;
 }
 
 /** Stores the current look under `name`; `false` when storage failed or the list is full. */
@@ -136,15 +135,31 @@ export async function applySavedTheme(
   theme: SavedTheme,
 ): Promise<"applied" | "image-missing"> {
   generatorSession.invalidateImageIntent();
-  applyAppearanceSnapshot(appearance, theme.look);
-  if (!theme.imageId) {
-    if (appearance.chatBackgroundPath) await appearance.onClearChatBackground();
+  if (theme.creation && theme.creation.kind !== "motion" && !theme.imageId) return "image-missing";
+  if (theme.creation?.kind === "motion") {
+    applyAppearanceSnapshot(appearance, { motion: theme.look.motion, live: theme.look.live });
     return "applied";
   }
+  if (!theme.imageId) {
+    if (appearance.chatBackgroundPath) await appearance.onClearChatBackground();
+    applyAppearanceSnapshot(
+      appearance,
+      theme.creation ? designLook(theme.creation.kind, theme.look) : theme.look,
+    );
+    return "applied";
+  }
+  const previous = loadChatBackgroundPath();
   const image = (await listBackgroundLibrary()).find((entry) => entry.id === theme.imageId);
+  if (loadChatBackgroundPath() !== previous)
+    throw new Error(t("Could not save changes. Your previous appearance remains active."));
   if (!image) return "image-missing";
   const path = await appearance.onChooseChatBackground(image.path, {
     libraryId: image.id,
   });
+  if (path)
+    applyAppearanceSnapshot(
+      appearance,
+      theme.creation ? designLook(theme.creation.kind, theme.look) : theme.look,
+    );
   return path ? "applied" : "image-missing";
 }

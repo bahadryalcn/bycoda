@@ -86,7 +86,7 @@ export async function ensureCurrentLibraryImage(
   const id = loadCurrentLibraryImageId();
   if (id) {
     const known = (await listBackgroundLibrary()).find((image) => image.id === id);
-    if (known) return known;
+    if (known?.path === chatBackgroundPath) return known;
   }
   const image = await addBackgroundLibraryImage(chatBackgroundPath);
   saveCurrentLibraryImageId(image.id);

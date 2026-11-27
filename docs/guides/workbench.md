@@ -1,5 +1,106 @@
 # Workbench navigation
 
+## Custom chat backgrounds
+
+Settings > Appearance > Backgrounds > Chat background accepts local PNG, JPEG,
+GIF and WebP images, muted looping MP4/WebM videos, and self-contained UTF-8 HTML
+scenes with inline CSS and JavaScript. Image limit: 25 MiB; video: 100 MiB; HTML:
+2 MiB. Media codec support follows the desktop WebView. Files stay on this
+device. Project menu > Background selects an override; removing it restores the
+global choice. Empty/all conversation scope and opacity still apply. Image effects
+apply only to images. Workspace procedural artwork remains a separate setting.
+
+Previously selected designs remain in the Backgrounds picker after changing or
+removing the active selection. Failed imports and saves keep the last selection.
+Imported assets have immutable paths and a bounded 400 MiB asset store; when full,
+new imports fail without deleting previous designs. The image library remains
+separate and supports the new media types with type labels instead of thumbnails.
+
+Ask the ordinary conversation model to create a background scene or revise an
+existing one. `visuals.background` reads the current global/project choice and
+bounded HTML source chunks; the returned path fences revision changes. This also
+works in a new conversation and for imported HTML. It keeps a workspace HTML file, previews it with `visuals.preview`
+and shows the same revision with `visuals.render`. Ask explicitly to apply that
+design globally or to the current project; `visuals.applyBackground` applies only
+that source through the authenticated desktop relay. No separate AI screen or
+video-generation provider is needed. A connected updated desktop is required;
+offline/error replies do not prove an apply. Generated code stays self-contained:
+no network assets, local file reads, Host/native APIs, credentials, forms, popups
+or navigation. The renderer uses the existing HTML preview token lifecycle with
+an opaque nested sandbox and no local asset root. It never enables canvas workers.
+Video and HTML unmount in hidden panes and background windows. Under reduced motion
+and in unfocused split panes they show a still frame; only the focused pane plays.
+The base workspace artwork remains available if media cannot run. Unreferenced
+imported assets are reclaimed after a while; saved, selected and history designs are kept.
+
+Ask explicitly to **save** a design for later: `visuals.saveBackground` stores its
+name, source/media and background preferences in the same **Saved designs** library
+used by Appearance, without applying it or adding selection history. Preview titles
+and `visuals.render` snapshots alone do not save reusable backgrounds. Read
+`visuals.background` to list saved names; pass a returned `designId` to reopen its
+source even while another background is selected. Preserve the returned `runtime`.
+Edits send `designId` and `expectedUpdatedAt`; stale edits fail without replacing a
+newer save. Explicit application retains an existing saved media name and saves new
+media under its title. Saved designs remain available for portable export/import
+from Appearance. These operations need the original live coding session and unlocked
+project; expired, mismatched or revoked desktop authority is rejected.
+
+The offline Three.js runtime exposes a bounded set of real Three.js r180 exports,
+including `CircleGeometry`, `PointLight` and `Reflector`. Tool descriptions and
+background status report the exact shipped list; unavailable addons/loaders must not
+be guessed or fetched from a CDN. Generated scenes render once under reduced motion,
+pause while hidden, cap pixel ratio/frame rate and dispose GPU resources on pagehide.
+
+### Create, save and reuse a design
+
+Use **Create background**, **Create scene** beside Live background, or **Create
+motion preset** in Motion. Describe the result in a short prompt, choose the
+provider/model, then **Create**. Images use the selected image provider; scenes
+use the ordinary conversation model to write HTML/CSS/JavaScript. Motion presets
+change existing motion settings. This does not synthesize video. Cancel or retry
+keeps the prompt, previous preview and active design.
+
+The creation sheet shows a real preview before **Apply**. Give it a name and
+**Save** to keep it in **Saved designs**; saving does not apply it. Open a saved
+design to revise its prompt or source, save changes or save a copy, and explicitly
+apply to the app or project. Motion presets apply to the app. Current and saved
+draft badges describe separate states. Unsaved source edits must update the
+preview before saving or applying.
+
+**Saved designs** supports rename, deliberate delete, and **Export**. Export writes
+a `.bycoda-design.json` file containing the media, prompt and relevant preferences,
+with no machine-specific asset path. **Import design** validates size, format,
+media signature and checksum, then adds a named design without applying it. Keep
+an export outside the application data folder to restore after reinstallation.
+Missing media, unsupported codecs, failed writes and conflicting sibling edits
+leave the usable selection intact. Named records share the existing saved-theme
+store and protected media library; the recent-selection history is not their
+storage. Deleting a design does not delete its imported media or active selection.
+
+Ordinary Background settings also provide **Save background** beside the current
+selection and on every unnamed Library tile. Enter a name there, without opening
+the creation sheet. Named tiles show the name and media type; **Rename** edits the
+same saved-design record without applying or generating anything. Global/project
+history and current-selection captions use that same name, with a translated
+media-type fallback for unnamed files instead of internal hash filenames. When
+multiple saved variants share identical media, the oldest background design is
+the stable Library name; the variants keep their own names in Saved designs.
+Legacy non-hashed selections use bounded label aliases in that record. Aliases
+are not file authority and are excluded from portable exports. A failed name save
+keeps the published name and edited form value; conflicting sibling edits require
+reopening the name form.
+
+**Try mountain lake** opens an offline Three.js landscape with layered mountains,
+pine forest and reflective water. Save it through the same named-design flow.
+Its bundled MIT-licensed Three.js runtime needs no CDN. The example caps rendering
+at 30 FPS and pixel ratio 1.5, limits reflection resolution, pauses when hidden,
+renders a still frame for reduced motion, and disposes GPU resources on removal.
+All generated/imported code retains the existing isolated, offline HTML sandbox.
+In ordinary chat, `runtime: "three"` on visual tools supplies this same offline
+runtime; background reads return the authored source and runtime for revisions.
+
+## Application menu and tabs
+
 The title-bar application menu keeps session creation, search, Inbox and Notes
 in the main list. Tab closing, view and zoom controls, and terminal actions have
 their own submenus. Use Settings > General for updates, the guide and the tour,

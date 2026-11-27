@@ -6,6 +6,10 @@ use std::path::Path;
 
 // 512,000 HTML characters can take about 3 bytes each once UTF-8 and JSON escaped.
 const MAX_BYTES: u64 = 4 * 1024 * 1024;
+// Background scenes may carry 2,097,152 HTML bytes; JSON escaping can expand that up to ~6x.
+// Files above MAX_BYTES are accepted only when their html stays within the background cap.
+const MAX_BACKGROUND_HTML_BYTES: usize = 2_097_152;
+const MAX_BACKGROUND_FILE_BYTES: u64 = 12 * 1024 * 1024 + 4096;
 
 fn valid_id(id: &str) -> bool {
     id.len() == 64
@@ -22,12 +26,20 @@ fn read_visual(dir: &Path, id: &str) -> Result<String, String> {
     let size = std::fs::metadata(&path)
         .map_err(|_| "Visual is not stored on this machine".to_string())?
         .len();
-    if size > MAX_BYTES {
+    if size > MAX_BACKGROUND_FILE_BYTES {
         return Err("Visual is too large".into());
     }
     let bytes = std::fs::read(&path).map_err(|_| "Visual could not be read".to_string())?;
     if format!("{:x}", Sha256::digest(&bytes)) != id {
         return Err("Visual content does not match its id".into());
+    }
+    if size > MAX_BYTES {
+        let html_len = serde_json::from_slice::<serde_json::Value>(&bytes)
+            .ok()
+            .and_then(|value| value["html"].as_str().map(str::len));
+        if html_len.is_none_or(|len| len > MAX_BACKGROUND_HTML_BYTES) {
+            return Err("Visual is too large".into());
+        }
     }
     String::from_utf8(bytes).map_err(|_| "Visual is not valid text".to_string())
 }
@@ -63,6 +75,25 @@ mod tests {
         assert!(read_visual(&dir, &forged).is_err());
         assert!(read_visual(&dir, "../secret").is_err());
         assert!(read_visual(&dir, &id.to_uppercase()).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn files_above_the_generic_cap_need_a_background_sized_html() {
+        let dir = std::env::temp_dir().join(format!("bycoda-inline-big-{}", std::process::id()));
+        let folder = dir.join("inline-visuals");
+        std::fs::create_dir_all(&folder).unwrap();
+        let store = |html: String| {
+            let body = format!(r#"{{"html":{}}}"#, serde_json::to_string(&html).unwrap());
+            let id = format!("{:x}", Sha256::digest(body.as_bytes()));
+            std::fs::write(folder.join(format!("{id}.json")), &body).unwrap();
+            id
+        };
+        // Escaped quotes make the file ~4.2 MiB while the html is exactly the background cap.
+        let ok = store("\"".repeat(MAX_BACKGROUND_HTML_BYTES));
+        assert!(read_visual(&dir, &ok).is_ok());
+        let over = store("\"".repeat(MAX_BACKGROUND_HTML_BYTES + 1));
+        assert!(read_visual(&dir, &over).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

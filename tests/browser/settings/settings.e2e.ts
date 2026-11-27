@@ -1,4 +1,379 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+
+// Browser fixture for the native nested sandbox contract; this does not establish native WebView acceptance.
+function offlineBackground(source: string) {
+  const guard = readFileSync(
+    new URL("../../../src-tauri/src/html_preview/background_guard.js", import.meta.url),
+    "utf8",
+  );
+  const inner = `<!doctype html><meta http-equiv="Content-Security-Policy" content="frame-src 'none'"><script>${guard}</script>${source}`;
+  const escaped = inner
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  return `<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src 'none'; connect-src 'none'; frame-src about:; child-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body,iframe{margin:0;width:100%;height:100%;border:0;overflow:hidden}</style><iframe title="Background" sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="${escaped}"></iframe>`;
+}
+
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
+    test(`custom backgrounds retain choices and render scoped controls: ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.addInitScript(() => {
+        localStorage.setItem("bycoda.chatBackgroundPath", "/fixture/scene.html");
+        localStorage.setItem("bycoda.decorativeMotion.v1", "1");
+        localStorage.setItem(
+          "bycoda.chatBackgroundHistory.v1",
+          JSON.stringify({ global: ["/fixture/scene.html", "/fixture/video.mp4"] }),
+        );
+        localStorage.setItem(
+          "bycoda:project-chat-backgrounds",
+          JSON.stringify({
+            "/fixture/project": {
+              path: "/fixture/scene.html",
+              emptyOpacity: 0.3,
+              sessionOpacity: 0.2,
+              scope: "all",
+              effect: "none",
+            },
+          }),
+        );
+      });
+      await page.route("http://background-preview.test/**", async (route) => {
+        const token = new URL(route.request().url()).pathname.split("/")[1];
+        const source = await page
+          .evaluate((id) => (window as any).__backgroundScenes?.[id] ?? "", token)
+          .catch(() => null);
+        if (source === null) {
+          await route.abort();
+          return;
+        }
+        await route.fulfill({ contentType: "text/html", body: offlineBackground(source) });
+      });
+      const base = `/tests/browser/settings/settings.html?backgroundProbe&theme=${theme}&lang=en`;
+      await page.goto(`${base}&section=appearance`);
+      await page.getByRole("tab", { name: "Background", exact: true }).click();
+      await page
+        .getByRole("listitem")
+        .filter({ has: page.getByText("Chat background", { exact: true }) })
+        .getByRole("button")
+        .first()
+        .click();
+      const group = page.locator('[data-setting-id="chat-background"]');
+      await expect(group).toBeVisible();
+      await expect(
+        group.getByRole("button", { name: "Choose background", exact: true }).last(),
+      ).toBeVisible();
+      await expect(group.locator("iframe")).toHaveCount(1);
+      await group.screenshot({
+        path: `temp/verification/custom-backgrounds/appearance-${theme}-${width}.png`,
+      });
+      await group.getByRole("button", { name: "Remove", exact: true }).click();
+      await expect(group.locator("iframe")).toHaveCount(0);
+      await group.getByRole("button", { name: /^Backgrounds:/ }).click();
+      await page.getByRole("option").filter({ hasText: "Live scene" }).click();
+      await expect(group.locator("iframe")).toHaveCount(1);
+      await page.goto(`${base}&backgroundProject`);
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await expect(page.locator("iframe")).toHaveCount(1);
+      await page.screenshot({
+        path: `temp/verification/custom-backgrounds/project-${theme}-${width}.png`,
+      });
+      await page.goto(`${base}&backgroundChat`);
+      await expect(page.locator("iframe")).toHaveCount(1);
+      await page.screenshot({
+        path: `temp/verification/custom-backgrounds/chat-${theme}-${width}.png`,
+      });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect(page.locator("iframe")).toHaveCount(0);
+      const video = await page.evaluate(async () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 320;
+        canvas.height = 180;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = "#28534f";
+        context.fillRect(0, 0, 320, 180);
+        const stream = canvas.captureStream(10);
+        const chunks: Blob[] = [];
+        const recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+        recorder.ondataavailable = (event) => chunks.push(event.data);
+        const stopped = new Promise<void>((resolve) => {
+          recorder.onstop = () => resolve();
+        });
+        recorder.start();
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        recorder.stop();
+        await stopped;
+        stream.getTracks().forEach((track) => track.stop());
+        return [...new Uint8Array(await new Blob(chunks, { type: "video/webm" }).arrayBuffer())];
+      });
+      await page.route("http://background-asset.test/**", (route) =>
+        route.fulfill({ contentType: "video/webm", body: Buffer.from(video) }),
+      );
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.goto(`${base}&backgroundChat&backgroundVideo`);
+      await expect(page.locator("video")).toHaveJSProperty("readyState", 4);
+      await expect(page.locator("video")).toHaveJSProperty("muted", true);
+      await expect(page.locator("video")).toHaveJSProperty("loop", true);
+      await page.screenshot({
+        path: `temp/verification/custom-backgrounds/video-${theme}-${width}.png`,
+      });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect(page.locator("video")).toHaveCount(0);
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`design creation previews saves and reapplies: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.route("http://background-preview.test/**", async (route) => {
+        const token = new URL(route.request().url()).pathname.split("/")[1];
+        const source = await page.evaluate(
+          (id) => (window as any).__backgroundScenes?.[id] ?? "",
+          token,
+        );
+        await route.fulfill({ contentType: "text/html", body: offlineBackground(source) });
+      });
+      await page.goto(
+        `/tests/browser/settings/settings.html?backgroundProbe&section=appearance&theme=${theme}&lang=en`,
+      );
+      const output = `temp/verification/appearance-create`;
+      await expect(page.getByRole("button", { name: /Composer 2\.5/ }).first()).toBeVisible();
+      await page.screenshot({ path: `${output}/generator-${theme}-${width}.png` });
+      await page.getByRole("tab", { name: "Background", exact: true }).click();
+      await page
+        .getByRole("listitem")
+        .filter({ has: page.getByText("Live", { exact: true }) })
+        .getByRole("button")
+        .first()
+        .click();
+      await page.getByRole("button", { name: "Create scene", exact: true }).click();
+      const studio = page.getByRole("dialog", { name: "Create a design" });
+      await expect(studio.getByLabel("Describe the result")).toBeVisible();
+      await studio.getByRole("button", { name: "Try mountain lake", exact: true }).click();
+      await expect(studio.locator("iframe")).toHaveCount(1);
+      await expect(studio.getByText("Unsaved draft", { exact: true })).toBeVisible();
+      expect(
+        await page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundPath")),
+      ).toBeNull();
+      await studio.getByLabel("Design name", { exact: true }).fill("My dusk lake");
+      await studio.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(studio.getByText("Saved", { exact: true })).toBeVisible();
+      await page.screenshot({ path: `${output}/studio-saved-${theme}-${width}.png` });
+      await studio.getByRole("button", { name: "Apply", exact: true }).first().click();
+      await expect(studio.getByText("Current", { exact: true })).toBeVisible();
+      const active = await page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundPath"));
+      expect(active).toContain("asset-");
+      await studio.getByRole("button", { name: "Edit source", exact: true }).click();
+      await studio.getByLabel("HTML, CSS and JavaScript").fill("<b>Changed draft</b>");
+      await expect(
+        studio.getByRole("button", { name: "Save changes", exact: true }),
+      ).toBeDisabled();
+      await expect(
+        studio.getByRole("button", { name: "Apply", exact: true }).first(),
+      ).toBeDisabled();
+      await studio.getByRole("button", { name: "Discard source changes", exact: true }).click();
+      await page.keyboard.press("Escape");
+      await expect(studio).toHaveCount(0);
+      await page.screenshot({ path: `${output}/background-${theme}-${width}.png` });
+      await page.getByRole("tab", { name: "Motion", exact: true }).click();
+      await page.screenshot({ path: `${output}/motion-${theme}-${width}.png` });
+      await page.getByRole("button", { name: "Create motion preset", exact: true }).click();
+      await expect(studio.getByLabel("Describe the result")).toHaveValue(/mountain lake/);
+      await expect(studio.getByText("Current", { exact: true })).toBeVisible();
+      await studio.getByRole("button", { name: "Open", exact: true }).click();
+      await expect(studio.getByLabel("Design name", { exact: true })).toHaveValue("My dusk lake");
+      await page.screenshot({ path: `${output}/studio-current-${theme}-${width}.png` });
+      expect(await studio.evaluate((node) => node.scrollWidth <= node.clientWidth + 2)).toBe(true);
+      await page.keyboard.press("Escape");
+      await page.goto(
+        `/tests/browser/settings/settings.html?backgroundProbe&backgroundProject&theme=${theme}&lang=en`,
+      );
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.frameLocator("iframe").frameLocator("iframe").locator(".orb").waitFor();
+      await page.screenshot({ path: `${output}/project-${theme}-${width}.png` });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`background naming stays coherent in library global and project history: ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.addInitScript(() => {
+        if (localStorage.getItem("backgroundNamingSeed")) return;
+        const id = "a".repeat(24),
+          path = `/fixture/asset-${"a".repeat(64)}.html`;
+        localStorage.setItem("bycoda.chatBackgroundPath", path);
+        localStorage.setItem("bycoda.decorativeMotion.v1", "1");
+        localStorage.setItem(
+          "bycoda.savedThemes.v1",
+          JSON.stringify([
+            {
+              id: "original",
+              name: "Original lake",
+              imageId: id,
+              look: {},
+              createdAt: 1,
+              updatedAt: 1,
+              creation: { kind: "scene", prompt: "Generated lake" },
+            },
+          ]),
+        );
+        localStorage.setItem(
+          "bycoda.chatBackgroundHistory.v1",
+          JSON.stringify({ global: [path], "/fixture/project": [path] }),
+        );
+        localStorage.setItem(
+          "bycoda:project-chat-backgrounds",
+          JSON.stringify({
+            "/fixture/project": {
+              path,
+              scope: "all",
+              effect: "none",
+              emptyOpacity: 0.3,
+              sessionOpacity: 0.2,
+            },
+          }),
+        );
+        localStorage.setItem("backgroundNamingSeed", "1");
+      });
+      await page.route("http://background-preview.test/**", async (route) => {
+        const token = new URL(route.request().url()).pathname.split("/")[1];
+        const source = await page.evaluate(
+          (id) => (window as any).__backgroundScenes?.[id] ?? "",
+          token,
+        );
+        await route.fulfill({ contentType: "text/html", body: offlineBackground(source) });
+      });
+      const base = `/tests/browser/settings/settings.html?backgroundProbe&backgroundNaming&theme=${theme}&lang=en`;
+      await page.goto(`${base}&section=appearance`);
+      await page.getByRole("tab", { name: "Background", exact: true }).click();
+      await page
+        .getByRole("listitem")
+        .filter({ has: page.getByText("Chat background", { exact: true }) })
+        .getByRole("button")
+        .first()
+        .click();
+      const group = page.locator('[data-setting-id="chat-background"]');
+      const library = group.getByRole("list", { name: "Library", exact: true });
+      await expect(
+        library.getByRole("button", { name: "Original lake · Live scene", exact: true }),
+      ).toBeVisible();
+      const before = await page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundPath"));
+      await library.getByRole("button", { name: "Rename: Original lake", exact: true }).click();
+      let dialog = page.getByRole("dialog", { name: "Rename", exact: true });
+      await dialog.getByLabel("Design name", { exact: true }).fill("Night lake");
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(
+        library.getByRole("button", { name: "Night lake · Live scene", exact: true }),
+      ).toBeVisible();
+      await expect(group.getByRole("button", { name: /^Backgrounds:/ })).toContainText(
+        "Night lake",
+      );
+      const video = library
+        .getByRole("listitem")
+        .filter({ has: page.getByRole("button", { name: "Video", exact: true }) });
+      await video.getByRole("button", { name: "Save background", exact: true }).click();
+      dialog = page.getByRole("dialog", { name: "Save background", exact: true });
+      await expect(dialog.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+      await dialog.getByLabel("Design name", { exact: true }).fill("Quiet video");
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(
+        library.getByRole("button", { name: "Quiet video · Video", exact: true }),
+      ).toBeVisible();
+      await library.getByRole("button", { name: "Rename: Night lake", exact: true }).click();
+      dialog = page.getByRole("dialog", { name: "Rename", exact: true });
+      await dialog.getByLabel("Design name", { exact: true }).fill("Moon lake");
+      await page.evaluate(() => {
+        const original = Storage.prototype.setItem;
+        (window as any).__restoreNameStorage = () => (Storage.prototype.setItem = original);
+        Storage.prototype.setItem = function (key, value) {
+          if (key === "bycoda.savedThemes.v1") throw new Error("fixture quota");
+          return original.call(this, key, value);
+        };
+      });
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(dialog.getByLabel("Design name", { exact: true })).toHaveValue("Moon lake");
+      await expect(dialog).toContainText("Could not save the theme.");
+      await expect(
+        library.getByRole("button", { name: "Night lake · Live scene", exact: true }),
+      ).toBeVisible();
+      await page.evaluate(() => (window as any).__restoreNameStorage());
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      expect(await page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundPath"))).toBe(
+        before,
+      );
+      await expect(group.getByRole("button", { name: /^Backgrounds:/ })).not.toContainText(
+        "asset-",
+      );
+      await group.screenshot({
+        path: `temp/verification/background-names/library-${theme}-${width}.png`,
+      });
+      await page.goto(`${base}&backgroundProject`);
+      const project = page.getByRole("dialog", { name: "Chat background", exact: true });
+      await expect(project.getByRole("button", { name: /^Backgrounds:/ })).toContainText(
+        "Moon lake",
+      );
+      const projectBefore = await page.evaluate(() =>
+        localStorage.getItem("bycoda:project-chat-backgrounds"),
+      );
+      await project.getByRole("button", { name: "Rename: Moon lake", exact: true }).click();
+      dialog = page.getByRole("dialog", { name: "Rename", exact: true });
+      await dialog.getByLabel("Design name", { exact: true }).fill("Project lake");
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      expect(
+        await page.evaluate(() => localStorage.getItem("bycoda:project-chat-backgrounds")),
+      ).toBe(projectBefore);
+      expect(await page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundPath"))).toBe(
+        before,
+      );
+      await expect(project.getByRole("button", { name: /^Backgrounds:/ })).toContainText(
+        "Project lake",
+      );
+      await project.screenshot({
+        path: `temp/verification/background-names/project-${theme}-${width}.png`,
+      });
+    });
+  }
+
+test("custom background sandbox denies network, self navigation, bridge and parent DOM", async ({
+  page,
+}) => {
+  const attempted: string[] = [];
+  const observations: string[] = [];
+  page.on("console", (message) => observations.push(message.text()));
+  await page.route("https://background-escape.test/**", async (route) => {
+    attempted.push(route.request().url());
+    await route.abort();
+  });
+  const payload = `<script>document.addEventListener('DOMContentLoaded',()=>{let denied=0;for(const run of [()=>parent.document.body,()=>localStorage.getItem('token'),()=>top.__TAURI_INTERNALS__.invoke('x')]){try{run()}catch{denied++}}let fresh='blocked';try{const frame=document.createElement('iframe');document.body.append(frame);if(frame.contentWindow.RTCPeerConnection)fresh='escaped'}catch{}console.log('background-security:'+denied+':'+typeof RTCPeerConnection+':'+fresh);fetch('https://background-escape.test/fetch').catch(()=>{});try{new WebSocket('wss://background-escape.test/socket')}catch{};setTimeout(()=>{console.log('background-navigation-attempted');location.href='https://background-escape.test/navigate'},50)});</script><img src='https://background-escape.test/image'>`;
+  await page.route("http://background-preview.test/security", (route) =>
+    route.fulfill({ contentType: "text/html", body: offlineBackground(payload) }),
+  );
+  await page.setContent(
+    '<iframe title="Scene" sandbox="allow-scripts" src="http://background-preview.test/security"></iframe>',
+  );
+  await expect(
+    page.frameLocator('iframe[title="Scene"]').frameLocator("iframe").locator("body"),
+  ).toBeAttached();
+  await expect
+    .poll(() => observations.includes("background-security:3:undefined:blocked"))
+    .toBe(true);
+  await expect.poll(() => observations.includes("background-navigation-attempted")).toBe(true);
+  expect(
+    page.frames().some((frame) => frame.url().startsWith("https://background-escape.test")),
+  ).toBe(false);
+  expect(attempted).toEqual([]);
+});
 
 for (const theme of ["dark", "light"])
   for (const width of [1280, 800, 390]) {

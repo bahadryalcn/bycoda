@@ -19,6 +19,8 @@ export type InlineVisual = InlineVisualSnapshot | InlineVisualRef;
 // Legacy v1 snapshots had to fit the retained 8,000 character tool output.
 export const MAX_INLINE_VISUAL_CHARS = 4000;
 export const MAX_INLINE_VISUAL_HTML_CHARS = 512_000;
+/** Background HTML limit in UTF-8 bytes; mirrors the native `html.len()` cap in control/background.rs. */
+export const MAX_BACKGROUND_HTML_BYTES = 2_097_152;
 export const MIN_INLINE_VISUAL_HEIGHT = 80;
 export const MAX_INLINE_VISUAL_HEIGHT = 2000;
 export const INLINE_VISUAL_ID = /^[0-9a-f]{64}$/;
@@ -35,14 +37,17 @@ const validHeight = (value: unknown): value is number =>
   value >= MIN_INLINE_VISUAL_HEIGHT &&
   value <= MAX_INLINE_VISUAL_HEIGHT;
 
-export function inlineVisualSource(value: unknown): InlineVisualSource | undefined {
+export function inlineVisualSource(
+  value: unknown,
+  maxHtmlChars = MAX_INLINE_VISUAL_HTML_CHARS,
+): InlineVisualSource | undefined {
   if (!value || typeof value !== "object") return;
   const item = value as Record<string, unknown>;
   if (
     !validTitle(item.title) ||
     typeof item.html !== "string" ||
     !item.html.trim() ||
-    item.html.length > MAX_INLINE_VISUAL_HTML_CHARS ||
+    item.html.length > maxHtmlChars ||
     item.html.includes("\0") ||
     !validHeight(item.height)
   )

@@ -1,4 +1,6 @@
 import { t, useLocale } from "../../../../../shared/i18n";
+import { chatBackgroundKind } from "../../../../../shared/lib/chatBackgroundKind";
+import { ChatBackgroundMedia } from "../../ChatBackgroundMedia";
 import { Button } from "../../../../../shared/ui/Button";
 import { Dices } from "../../../../../shared/ui/icons";
 import { workspaceBackgroundImage } from "../../../../../shared/theme/workspaceBackground";
@@ -78,7 +80,21 @@ export function BackgroundPreview({
             />
           </div>
         ) : null}
-        {hasImage && src ? (
+        {hasImage && chatBackgroundKind(appearance.chatBackgroundPath) !== "image" ? (
+          <ChatBackgroundMedia
+            path={appearance.chatBackgroundPath}
+            className={styles.layer}
+            style={
+              {
+                "--chat-media-opacity":
+                  appearance.preferences?.chatBackgroundLayer === false
+                    ? 1
+                    : appearance.chatBackgroundEmptyOpacity,
+                "--chat-media-blur": `${appearance.chatBackgroundBlur}px`,
+              } as React.CSSProperties
+            }
+          />
+        ) : hasImage && src ? (
           <img
             className={styles.layer}
             src={src}

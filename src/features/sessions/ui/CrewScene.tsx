@@ -90,6 +90,8 @@ export function crewActionAt(id: number, elapsed: number): TeaPose {
 const AGE_CHANGE_MS = 900;
 
 type SceneProps = {
+  /** Appearance preview only; never changes the saved crew settings. */
+  preview?: { theme: ReturnType<typeof loadCrewTheme>; growth: boolean };
   className?: string;
   variant?: "hero" | "background";
   /** The session whose crew this is; without one every uncle sits. */
@@ -148,6 +150,7 @@ export function CrewScene(props: SceneProps) {
 }
 
 function CrewStage({
+  preview,
   className = "",
   variant = "hero",
   sessionId,
@@ -157,7 +160,8 @@ function CrewStage({
   crew: previewCrew,
 }: SceneProps) {
   const t = useT();
-  const theme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
+  const storedTheme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
+  const theme = preview?.theme ?? storedTheme;
   const rigged = riggedCrewTheme(theme);
   const workerEnabled = useSyncExternalStore(
     subscribeCanvasWorkerEnabled,
@@ -180,11 +184,12 @@ function CrewStage({
     sameCrewSeats,
   );
   // Off: everyone is an uncle, whatever their context.
-  const growthEnabled = useSyncExternalStore(
+  const storedGrowthEnabled = useSyncExternalStore(
     subscribeCrewGrowthEnabled,
     loadCrewGrowthEnabled,
     loadCrewGrowthEnabled,
   );
+  const growthEnabled = preview?.growth ?? storedGrowthEnabled;
   const showCharge = rigged ? growthEnabled : !growthEnabled;
   const ageOf = (seat: CrewSeat | undefined) =>
     growthEnabled ? crewAge(seat?.context) : crewAge(undefined);

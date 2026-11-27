@@ -679,7 +679,10 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         // Contract deadlines (`responseTimeoutMs`): the image adapter stops at 180 s and the
         // contract allows 240 s; suggestions allow 100 s. Over HTTP the desktop must outlast
         // them, or it reports failure for work the Host still completes.
-        "appearance.backgroundImage" => std::time::Duration::from_secs(250),
+        // Design creation shares the image adapter's 240 s contract.
+        "appearance.backgroundImage" | "appearance.createDesign" => {
+            std::time::Duration::from_secs(250)
+        }
         m if m.starts_with("appearance.") => std::time::Duration::from_secs(110),
         // Decision-model setup: contract 95 s (local start, source test) and 45 s (manual verify).
         "decisionModels.local.start" | "decisionModels.sources.test" => {
