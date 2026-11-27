@@ -20,7 +20,7 @@ for (const theme of ["light", "dark"])
       mkdirSync(evidence, { recursive: true });
       await page.screenshot({ path: `${evidence}/${theme}-${width}.png`, animations: "disabled" });
       await expect(page.getByRole("button", { name: "Graph", exact: true })).toHaveCount(0);
-      await page.getByRole("button", { name: "core-pack main", exact: true }).click();
+      await page.getByRole("button", { name: "core-pack", exact: true }).click();
       await expect(page.getByRole("button", { name: "Graph", exact: true })).toBeVisible();
       expect(
         await page.evaluate(() =>
@@ -57,6 +57,33 @@ for (const theme of ["light", "dark"])
       mkdirSync(evidence, { recursive: true });
       await page.screenshot({
         path: `${evidence}/push-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`Changes header shows bulk actions as icons ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        "/tests/browser/source-control/git-workspace.html?action-feedback&file-typography",
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const open = page.getByRole("button", { name: "Open All Changes", exact: true });
+      await expect(open).toBeVisible();
+      const actions = open.locator("..");
+      await expect(actions.getByRole("button", { name: "Filter changed files" })).toBeVisible();
+      await expect(actions.getByRole("button", { name: "Discard All Changes" })).toBeVisible();
+      await expect(actions.getByRole("button", { name: "Stage all changes" })).toBeVisible();
+      await expect(actions.getByRole("button", { name: "More actions" })).toHaveCount(0);
+
+      const evidence = "temp/verification/changes-header";
+      mkdirSync(evidence, { recursive: true });
+      await actions.locator("..").screenshot({
+        path: `${evidence}/icons-${theme}-${width}.png`,
         animations: "disabled",
       });
     });
@@ -587,7 +614,7 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   await page.screenshot({ path: testInfo.outputPath("submodules.png") });
 });
 
-// The sidebar header is the only worktree selector: its first row is "All worktrees" (the
+// The sidebar header is the only worktree selector: its first row is "All repositories" (the
 // default scope), then every worktree. The Changes panel only carries a branch picker.
 const worktreeSwitch = (page: Page) =>
   page.getByRole("button", { name: "Switch worktree", exact: true });
@@ -597,8 +624,8 @@ const pickWorktree = async (page: Page, option: string) => {
   await worktreeSwitch(page).click();
   const list = page.getByRole("dialog", { name: "Worktrees", exact: true });
   const row =
-    option === "All worktrees"
-      ? list.getByRole("option", { name: /^All worktrees/ })
+    option === "All repositories"
+      ? list.getByRole("option", { name: /^All repositories/ })
       : list
           .getByRole("option")
           .filter({ hasText: option === "Project folder" ? /^main/ : option });
@@ -851,13 +878,13 @@ test("grouped repository files allow wheel scrolling the outer list", async ({ p
     .toBeGreaterThan(diagonalBaseline);
 });
 
-test("All worktrees lists only worktrees with changes as same-level sections and follows the header focus", async ({
+test("All repositories lists every worktree as same-level sections, opens the changed ones and follows the header focus", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
   await page.goto("/tests/browser/source-control/git-workspace.html?checkouts&idle");
-  // All worktrees is the default scope of a project with several worktrees.
-  await expect(worktreeSwitch(page)).toContainText("All worktrees");
+  // All repositories is the default scope of a project with several worktrees.
+  await expect(worktreeSwitch(page)).toContainText("All repositories");
   await expect(page.getByRole("status", { name: "Header focus" })).toHaveText("all");
   const list = page.locator("[data-checkout-overview]");
   const audit = "/trees/audit/very-long-worktree-folder-name";
@@ -873,17 +900,21 @@ test("All worktrees lists only worktrees with changes as same-level sections and
         ).length,
       cwd,
     );
-  // Same-level sections for the worktrees that have uncommitted changes; the first is open.
-  // The clean worktree is only in the header picker, and nothing is labelled or grouped.
-  await expect(list.locator("[data-git-repository]")).toHaveCount(3);
+  // Same-level sections for every worktree, as in VS Code: the ones with changes are open, the
+  // clean one is collapsed at the end, and nothing is labelled or grouped.
+  await expect(list.locator("[data-git-repository]")).toHaveCount(4);
   await expect(headerFor("/fixture")).toHaveAttribute("aria-expanded", "true");
-  await expect(headerFor(audit)).toHaveAttribute("aria-expanded", "false");
-  await expect(headerFor("/trees/detached")).toHaveAttribute("aria-expanded", "false");
-  await expect(panelFor("/trees/clean-one")).toHaveCount(0);
-  await expect(list.getByText("Clean", { exact: false })).toHaveCount(0);
+  await expect(headerFor(audit)).toHaveAttribute("aria-expanded", "true");
+  await expect(headerFor("/trees/detached")).toHaveAttribute("aria-expanded", "true");
+  await expect(headerFor("/trees/clean-one")).toHaveAttribute("aria-expanded", "false");
+  // Every row, open or collapsed, switches its own branch.
+  await expect(
+    panelFor("/trees/clean-one").getByRole("button", { name: "Branch chore/clean-one" }),
+  ).toHaveCount(1);
+  // No "Clean" group label (the clean-one row's own folder name aside).
+  await expect(list.getByText("Clean", { exact: true })).toHaveCount(0);
   await expect(list.getByText("This session", { exact: false })).toHaveCount(0);
   await expect(list.getByText("Project folder", { exact: false })).toHaveCount(0);
-  expect(await diffReads("/trees/clean-one")).toBe(0);
   // The shared tooltip retains exact paths without repeating them in rows.
   for (const [path, target] of [
     [audit, headerFor(audit)],
@@ -909,11 +940,13 @@ test("All worktrees lists only worktrees with changes as same-level sections and
         (value) => document.documentElement.classList.toggle("theme-light", value),
         light,
       );
-      await expect(headerFor(audit)).toContainText(
-        "audit/2026-10-14-long-branch-name-for-responsive-review",
-      );
-      // The hash-like folder is not part of the row; only the tooltip carries the path.
-      await expect(headerFor(audit)).not.toContainText("very-long-worktree-folder-name");
+      // The row names the folder; its branch picker names the branch.
+      await expect(headerFor(audit)).toContainText("very-long-worktree-folder-name");
+      await expect(
+        panelFor(audit).getByRole("button", {
+          name: "Branch audit/2026-10-14-long-branch-name-for-responsive-review",
+        }),
+      ).toHaveCount(1);
       await expect
         .poll(() =>
           list.evaluate((element) =>
@@ -929,20 +962,21 @@ test("All worktrees lists only worktrees with changes as same-level sections and
     }
   }
   await page.emulateMedia({ reducedMotion: "reduce" });
-  // Expanding a section shows its changes.
+  // Collapsing and expanding a section keeps its changes one keypress away.
   await headerFor(audit).focus();
+  await page.keyboard.press("Enter");
+  await expect(headerFor(audit)).toHaveAttribute("aria-expanded", "false");
   await page.keyboard.press("Enter");
   await expect(headerFor(audit)).toHaveAttribute("aria-expanded", "true");
   await expect(panelFor(audit).getByText("workspace.tsx", { exact: true })).toBeVisible();
   await expect.poll(() => diffReads(audit)).toBeGreaterThan(0);
-  expect(await diffReads("/trees/clean-one")).toBe(0);
   // Selecting a worktree in the header focuses it: only its panel remains, and the expanded
   // state of the overview sections survives the round trip.
   await pickWorktree(page, "Detached");
   await expect(list).toHaveCount(0);
   await expect(page.getByRole("status", { name: "Header focus" })).toHaveText("/trees/detached");
   await expect(branchTrigger(page)).toBeVisible();
-  await pickWorktree(page, "All worktrees");
+  await pickWorktree(page, "All repositories");
   await expect(page.getByRole("status", { name: "Header focus" })).toHaveText("all");
   await expect(list).toBeVisible();
   await expect(headerFor(audit)).toHaveAttribute("aria-expanded", "true");
@@ -971,10 +1005,10 @@ for (const theme of ["light", "dark"])
       const toggle = (panel: typeof main) => panel.locator("header button[aria-expanded]").first();
       const message = (panel: typeof main) =>
         panel.getByRole("textbox", { name: "Commit message", exact: true });
-      // All worktrees is the default: the project folder, its child repository and the other
-      // worktree with changes are same-level sections; only the first is open.
+      // All repositories is the default: the project folder, its child repository and the other
+      // worktree are same-level sections; the worktrees with changes are open.
       await expect(overview.locator("[data-git-repository]")).toHaveCount(3);
-      await expect(toggle(worktree)).toHaveAttribute("aria-expanded", "false");
+      await expect(toggle(worktree)).toHaveAttribute("aria-expanded", "true");
       await expect(overview.getByText("Separate repository", { exact: false })).toHaveCount(0);
       const [mainBox, mobileBox, worktreeBox] = await Promise.all(
         [main, mobile, worktree].map((panel) => panel.boundingBox()),
@@ -995,9 +1029,6 @@ for (const theme of ["light", "dark"])
         await main.scrollIntoViewIfNeeded();
         await page.screenshot({ path: `${evidence}/overview-${theme}-${width}-${sidebar}.png` });
       }
-      await toggle(worktree).focus();
-      await page.keyboard.press("Enter");
-      await expect(toggle(worktree)).toHaveAttribute("aria-expanded", "true");
       await expect(worktree.getByText("parity.ts", { exact: true })).toBeVisible();
       await expect(worktree.getByText("accounts.ts", { exact: true })).toBeVisible();
       await message(worktree).fill("Worktree draft stays here");
@@ -1059,13 +1090,13 @@ for (const theme of ["light", "dark"])
         ),
       ).toBe(true);
       // Focusing one worktree in the header shows only its panel, with its draft intact; going
-      // back to All worktrees restores every draft.
+      // back to All repositories restores every draft.
       await pickWorktree(page, "cross-provider");
       await expect(overview).toHaveCount(0);
       await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveValue(
         "Worktree draft stays here",
       );
-      await pickWorktree(page, "All worktrees");
+      await pickWorktree(page, "All repositories");
       await expect(message(main)).toHaveValue("Main checkout draft stays here");
       await expect(message(worktree)).toHaveValue("Worktree draft stays here");
       await expect(message(mobile)).toHaveValue("Mobile draft stays here");

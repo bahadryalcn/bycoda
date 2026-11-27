@@ -68,6 +68,10 @@ export function initialize(context: TaskContext, store: HostStore): Promise<void
       CREATE TRIGGER IF NOT EXISTS task_cache_update AFTER UPDATE ON tasks BEGIN UPDATE task_cache_revision SET version=version+1 WHERE id=1; END;
       CREATE TRIGGER IF NOT EXISTS task_cache_delete AFTER DELETE ON tasks BEGIN UPDATE task_cache_revision SET version=version+1 WHERE id=1; END;
       CREATE INDEX IF NOT EXISTS tasks_scheduler_status ON tasks(json_extract(value, '$.status'));
+      CREATE INDEX IF NOT EXISTS tasks_owner_session ON tasks(json_extract(value,'$.sessionId'))
+        WHERE json_extract(value,'$.sessionId') IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS tasks_owner_reviewer_session ON tasks(json_extract(value,'$.reviewer.sessionId'))
+        WHERE json_extract(value,'$.reviewer.sessionId') IS NOT NULL;
       CREATE INDEX IF NOT EXISTS tasks_crew_run
         ON tasks(CASE WHEN json_valid(value) THEN json_extract(value,'$.crewRunId') END);
       -- budgetParent resolves a crew task's owner every scheduler tick; queries must repeat this exact expression.

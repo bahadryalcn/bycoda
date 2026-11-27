@@ -31,6 +31,8 @@ export type ProjectTerminalDock = {
     string,
     { connectionId: string; project: { environmentId: string; cwd: string } }
   >;
+  /** Window-owned shells the remote project's Host runs, for machines without saved SSH. */
+  hostShells?: Record<string, { projectCwd: string }>;
 };
 
 export function dockTerminalGroup(dock: ProjectTerminalDock, fileId: string): string[] {
@@ -142,6 +144,8 @@ export function closeTerminalInDock(
   if (remoteRuns) delete remoteRuns[fileId];
   const sshShells = dock.sshShells ? { ...dock.sshShells } : undefined;
   if (sshShells) delete sshShells[fileId];
+  const hostShells = dock.hostShells ? { ...dock.hostShells } : undefined;
+  if (hostShells) delete hostShells[fileId];
   const activeFileId =
     dock.pane.activeFileId === fileId
       ? (dockTerminalGroup(dock, fileId).find((id) => id !== fileId) ??
@@ -151,6 +155,7 @@ export function closeTerminalInDock(
     ...dock,
     remoteRuns,
     sshShells,
+    hostShells,
     pane: { ...dock.pane, files, activeFileId },
     splitGroups: dock.splitGroups
       ?.map((group) => group.filter((id) => id !== fileId))
@@ -197,7 +202,8 @@ export function restartDockTerminalInProject(
   fileId: string,
 ): ProjectTerminalDock {
   const file = dock.pane.files.find((entry) => entry.id === fileId);
-  if (!file || dock.sshShells?.[fileId] || dock.remoteRuns?.[fileId]) return dock;
+  if (!file || dock.sshShells?.[fileId] || dock.hostShells?.[fileId] || dock.remoteRuns?.[fileId])
+    return dock;
   const next = projectTerminalReplacement(
     file,
     dock.pane.files,
@@ -349,7 +355,7 @@ export function splitProjectTerminalsForMove(
     const path = normalizeProjectPath(dock.projectPath);
     const stays = remainingProjects.has(path);
     const follows = movingProjects.has(path) && !stays;
-    if (follows && !dock.remoteRuns && !dock.sshShells) moving.push(dock);
+    if (follows && !dock.remoteRuns && !dock.sshShells && !dock.hostShells) moving.push(dock);
     else remaining.push(dock);
   }
   return { moving, remaining };

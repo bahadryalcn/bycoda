@@ -243,6 +243,17 @@ it("keeps explicit alignment authoritative over structural item and tab defaults
   expect(structural.some((rule) => rule.selector.includes("text-left"))).toBe(true);
 });
 
+// Notice links (Details, Dismiss, Retry) pass `loading`, which adds reserve ghosts. The text
+// layout makes the label inline, so a visible ghost would leave a blank gap after each link.
+it("hides reserve ghosts inside inline text links", () => {
+  const source = readFileSync(join(process.cwd(), "src/shared/ui/Button.module.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\s+/g, " ");
+  expect(source).toMatch(
+    /\.control\.link\[data-button-layout="text"\] \.labelGhost \{ display: none; \}/,
+  );
+});
+
 it("renders ButtonGroup as one labelled joined group of ordinary Buttons", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");

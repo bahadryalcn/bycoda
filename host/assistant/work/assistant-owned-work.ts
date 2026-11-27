@@ -45,24 +45,38 @@ export async function recordAssistantCrewTaskOrigin(
 }
 
 /** Saved by the validated Room owner immediately before the exact creation effect. */
-async function origins(store: HostStore): Promise<Origin[]> {
+async function origins(
+  store: HostStore,
+  scope?: { taskId?: string; goalId?: string; automationId?: string },
+): Promise<Origin[]> {
+  const bindings = scope
+    ? [scope.taskId ?? null, scope.goalId ?? null, scope.automationId ?? null]
+    : [];
+  const voiceScope = scope ? " AND json_extract(value,'$.ownership.id') IN (?,?,?)" : "";
   const rows = await store.db
     .prepare(
-      "SELECT json_extract(value,'$.ownership') AS origin FROM metadata WHERE key LIKE 'voice-work:%' AND json_extract(value,'$.ownership') IS NOT NULL",
+      `SELECT json_extract(value,'$.ownership') AS origin FROM metadata
+       WHERE key LIKE 'voice-work:%' AND json_extract(value,'$.ownership') IS NOT NULL${voiceScope}
+       ORDER BY rowid`,
     )
-    .all();
+    .all(...bindings);
   const result = rows.map((row) => JSON.parse(String(row.origin)) as Origin);
+  if (scope && scope.automationId === undefined) return result;
   const quickTable = await store.db
     .prepare(
       "SELECT 1 FROM sqlite_master WHERE type='table' AND name='assistant_quick_automations'",
     )
     .get();
   if (quickTable) {
+    const quickScope = scope ? " AND json_extract(q.value,'$.automationId')=?" : "";
     const quick = await store.db
       .prepare(
-        "SELECT q.value AS receipt,j.value AS job FROM assistant_quick_automations q JOIN assistant_jobs j ON j.id=q.job_id WHERE j.deleted_at IS NULL AND json_extract(q.value,'$.state')='completed'",
+        `SELECT q.value AS receipt,j.value AS job FROM assistant_quick_automations q
+         JOIN assistant_jobs j ON j.id=q.job_id
+         WHERE j.deleted_at IS NULL AND json_extract(q.value,'$.state')='completed'${quickScope}
+         ORDER BY q.rowid`,
       )
-      .all();
+      .all(...(scope ? [scope.automationId ?? null] : []));
     for (const row of quick) {
       const receipt = JSON.parse(String(row.receipt)) as {
         automationId: string;
@@ -88,7 +102,11 @@ export async function assistantOwnedTaskAllowed(
   profile: AssistantProfile,
   paused: boolean,
 ): Promise<boolean> {
-  const rows = await origins(store);
+  const rows = await origins(store, {
+    taskId: task.id,
+    goalId: task.goalId,
+    automationId: task.source === "automation" ? task.automationId : undefined,
+  });
   let origin = rows.find(
     (origin) =>
       (origin.kind === "task" && origin.id === task.id) ||
@@ -108,14 +126,14 @@ export async function assistantOwnedTaskAllowed(
         })
       : undefined;
     if (run?.sourceTaskId && run.assignments.some((assignment) => assignment.taskId === task.id)) {
-      const rootRow = await store.db
-        .prepare("SELECT value FROM tasks WHERE id=?")
-        .get(run.sourceTaskId);
-      const root = rootRow ? (JSON.parse(String(rootRow.value)) as HostTask) : undefined;
-      const candidate = rows.find(
-        (origin) => origin.kind === "task" && origin.id === run.sourceTaskId,
+      const candidate = (await origins(store, { taskId: run.sourceTaskId })).find(
+        (origin) => origin.kind === "task",
       );
       if (candidate) {
+        const rootRow = await store.db
+          .prepare("SELECT value FROM tasks WHERE id=?")
+          .get(run.sourceTaskId);
+        const root = rootRow ? (JSON.parse(String(rootRow.value)) as HostTask) : undefined;
         if (
           !root ||
           root.projectId !== task.projectId ||
@@ -188,19 +206,19 @@ export async function assistantOwnedSessionAllowed(
         sourceTaskId?: string;
       };
       if (!run.sourceTaskId) continue;
+      const owned = (await origins(store, { taskId: run.sourceTaskId })).some(
+        (origin) => origin.kind === "task",
+      );
+      if (!owned) continue;
       const rootRow = await store.db
         .prepare("SELECT value FROM tasks WHERE id=?")
         .get(run.sourceTaskId);
       const root = rootRow ? (JSON.parse(String(rootRow.value)) as HostTask) : undefined;
-      const owned = (await origins(store)).some(
-        (origin) => origin.kind === "task" && origin.id === run.sourceTaskId,
-      );
       if (
-        owned &&
-        (!root ||
-          root.projectId !== run.projectId ||
-          root.crewExecutionId !== run.id ||
-          !(await assistantOwnedTaskAllowed(store, root, profile, paused)))
+        !root ||
+        root.projectId !== run.projectId ||
+        root.crewExecutionId !== run.id ||
+        !(await assistantOwnedTaskAllowed(store, root, profile, paused))
       )
         return false;
     }
@@ -214,9 +232,7 @@ export async function assistantOwnedGoalAllowed(
   profile: AssistantProfile,
   paused: boolean,
 ): Promise<boolean> {
-  const origin = (await origins(store)).find(
-    (origin) => origin.kind === "goal" && origin.id === goalId,
-  );
+  const origin = (await origins(store, { goalId })).find((origin) => origin.kind === "goal");
   if (!origin) return true;
   if (origin.state !== "completed" || paused || !profile.enabled || !profile.setupComplete)
     return false;

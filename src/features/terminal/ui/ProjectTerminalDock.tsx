@@ -506,6 +506,7 @@ function ProjectTerminalDockComponent({
                     profile={file.shellProfile}
                     sshConnectionId={dock.sshShells?.[file.id]?.connectionId}
                     sshProject={dock.sshShells?.[file.id]?.project}
+                    hostShellProject={dock.hostShells?.[file.id]?.projectCwd}
                     active={focused && file.id === dock.pane.activeFileId}
                     dockToolbarTarget={selectedToolbarTarget}
                     onMetaChange={(patch) => onTerminalMetaChange?.(file.id, patch)}

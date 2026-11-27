@@ -3,7 +3,9 @@ import {
   formatLiveElapsed,
   formatLiveMinutes,
   liveAgentsFromSessions,
+  withoutSettledAgents,
   workingProjectPaths,
+  type LiveAgent,
 } from "./liveAgents";
 import { newSession, type Block, type Session } from "./session";
 
@@ -338,5 +340,36 @@ describe("waiting agents", () => {
     expect(agents.map((agent) => agent.id)).toEqual(["k", "parent", "d"]);
     expect(agents[1].waiting?.kind).toBe("delegated");
     expect(agents[2].waiting).toBeUndefined();
+  });
+});
+
+describe("withoutSettledAgents", () => {
+  const agent = (id: string, patch: Partial<LiveAgent> = {}): LiveAgent => ({
+    id,
+    cwd: "/repo",
+    title: id,
+    harness: "claude",
+    activity: "Working",
+    needsApproval: false,
+    done: false,
+    ...patch,
+  });
+
+  it("drops settled sessions whatever their last outcome", () => {
+    const agents = [
+      agent("failed", { issue: "failed", done: true }),
+      agent("done", { done: true }),
+      agent("waiting", { waiting: { kind: "delegated" } as LiveAgent["waiting"] }),
+      agent("active", { done: true }),
+    ];
+    const kept = withoutSettledAgents(agents, (entry) =>
+      entry.id === "active" ? { state: "active" } : { state: "settled" },
+    );
+    expect(kept.map((entry) => entry.id)).toEqual(["active"]);
+  });
+
+  it("keeps a settled session whose new turn is working or asking", () => {
+    const agents = [agent("working"), agent("asking", { needsApproval: true })];
+    expect(withoutSettledAgents(agents, () => ({ state: "settled" }))).toBe(agents);
   });
 });

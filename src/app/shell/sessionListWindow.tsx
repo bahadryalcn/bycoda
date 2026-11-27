@@ -53,7 +53,7 @@ export function folderMoveTargetAt(
   return el.closest("[data-pinned-sessions]") ? { kind: "pinned" } : { kind: "root" };
 }
 export type SessionListRow =
-  | { kind: "folder"; key: string; entry: FolderEntry; depth: number }
+  | { kind: "folder"; key: string; entry: FolderEntry; depth: number; groupSection?: "pinned" }
   | {
       kind: "group";
       key: string;
@@ -74,6 +74,8 @@ export type SessionListVirtualProps = {
   style?: CSSProperties;
   className?: string;
   "data-index"?: number;
+  /** Draws the hairline above this row: it ends the Pinned block or opens the Settled shelf. */
+  "data-section-break"?: "";
   onFocusCapture?: () => void;
   onBlurCapture?: (event: FocusEvent<HTMLLIElement>) => void;
 };
@@ -84,7 +86,7 @@ export function flattenSessionList(
 ): SessionListRow[] {
   const rows: SessionListRow[] = [];
   const visitFolder = (entry: FolderEntry, depth: number, groupSection?: "pinned") => {
-    rows.push({ kind: "folder", key: `folder:${entry.folder.id}`, entry, depth });
+    rows.push({ kind: "folder", key: `folder:${entry.folder.id}`, entry, depth, groupSection });
     if (entry.folder.collapsed && !expandCollapsed) return;
     entry.folders.forEach((child) => visitFolder(child, depth + 1, groupSection));
     entry.sessions.forEach((session) =>
@@ -116,20 +118,37 @@ export function flattenSessionList(
     }
     rows.push({ kind: "group", key: `group:${entry.kind}`, entry });
     if (entry.collapsed && !expandCollapsed) return;
+    // Built-in groups (Pinned, Reminders, Settled) are not folders: their rows start flush.
     if (entry.kind === "pinned")
-      entry.folders.forEach((folder) => visitFolder(folder, 1, "pinned"));
+      entry.folders.forEach((folder) => visitFolder(folder, 0, "pinned"));
     entry.sessions.forEach((session) =>
       rows.push({
         kind: "session",
         key: `session:${session.id}`,
         session,
         section: entry.kind,
-        depth: 1,
+        depth: 0,
         groupSection: entry.kind,
       }),
     );
   });
   return rows;
+}
+
+const inPinnedBlock = (row: SessionListRow | { kind: "heading" }) =>
+  row.kind === "group"
+    ? row.entry.kind === "pinned"
+    : (row.kind === "session" || row.kind === "folder") && row.groupSection === "pinned";
+
+/** True for the first row after the Pinned block and for the Settled shelf's header. */
+export function startsSessionSection(
+  rows: readonly (SessionListRow | { kind: "heading" })[],
+  index: number,
+): boolean {
+  if (index === 0) return false;
+  const row = rows[index];
+  if (row.kind === "group" && row.entry.kind === "settled") return true;
+  return inPinnedBlock(rows[index - 1]) && !inPinnedBlock(row);
 }
 
 function observeListOffset(
@@ -294,10 +313,16 @@ export function SessionListWindow<Row extends SessionListRow | { kind: "heading"
     >
       {renderedRows.map((item) => {
         const row = rows[item.index];
+        const sectionBreak = startsSessionSection(rows, item.index);
         return renderRow(row, {
           ref: enabled ? virtualizer.measureElement : undefined,
           "data-index": enabled ? item.index : undefined,
-          className: enabled ? "absolute inset-x-0 top-0 list-none" : undefined,
+          "data-section-break": sectionBreak ? "" : undefined,
+          className: enabled
+            ? "absolute inset-x-0 top-0 list-none"
+            : sectionBreak
+              ? "relative list-none"
+              : undefined,
           style: enabled ? { transform: `translateY(${item.start - scrollMargin}px)` } : undefined,
           onFocusCapture: () => setFocusedKey(row.key),
           onBlurCapture: (event) => {

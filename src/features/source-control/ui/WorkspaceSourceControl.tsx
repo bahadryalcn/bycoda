@@ -11,7 +11,7 @@ import {
   sessionCheckout,
 } from "../model/checkoutSelection";
 import { worktreeRowTitle } from "../model/worktreeRows";
-import { changeSectionRoots } from "../model/worktreeScope";
+import { changeSectionRoots, overviewSectionRoots } from "../model/worktreeScope";
 import { loadOnlyRepository, saveOnlyRepository } from "../model/onlyRepository";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { basename, type GitFileDiffKind, type GitHistoryCommit } from "../../../platform/tauri/fs";
@@ -112,30 +112,40 @@ export function WorkspaceSourceControl({
 
   // A focus on a worktree that left the list (deleted elsewhere) quietly shows the overview.
   const focused = checkouts && focusPath ? paths.find((path) => same(path, focusPath)) : undefined;
-  // The Changes panel lists sections of the focused worktree, or of every worktree with
-  // uncommitted changes or unpushed commits (the session's worktree when none has); the header
-  // picker lists the rest.
+  // The Changes panel lists the focused worktree, or (All repositories, as in VS Code) every
+  // worktree: those with uncommitted changes or unpushed commits first and open, the clean ones
+  // collapsed below them.
   const listedTrees = paths.flatMap((path) => (worktrees[path] ? [worktrees[path]] : []));
   const sessionRoot = checkouts ? sessionCheckout(cwd, paths) : undefined;
+  const changedRoots = checkouts && !focused ? changeSectionRoots(listedTrees, cwd) : [];
   const sectionRoots = !checkouts
     ? []
     : focused
       ? [focused]
       : (() => {
-          const roots = changeSectionRoots(listedTrees, cwd);
+          const roots = overviewSectionRoots(listedTrees, cwd);
           return roots.length ? roots : [sessionRoot ?? paths[0] ?? cwd];
         })();
-  // The first section opens by default, as does a focused worktree; the rest are one click away.
-  const rowOpen = (path: string) => expanded[projectKey(path)] ?? same(path, sectionRoots[0] ?? "");
-  // Only the listed sections read Git: other worktrees are never scanned for child repositories.
-  const discoveryRoots = checkouts ? sectionRoots : selected === cwd ? [...paths, cwd] : paths;
+  // Worktrees with work open by default (with none, the first row), as does a focused worktree.
+  const rowOpen = (path: string) =>
+    expanded[projectKey(path)] ??
+    (changedRoots.length
+      ? changedRoots.some((root) => same(root, path))
+      : same(path, sectionRoots[0] ?? ""));
+  // Only open sections are scanned for child repositories: a collapsed clean worktree costs
+  // one status read, not a directory walk.
+  const discoveryRoots = checkouts
+    ? sectionRoots.filter(rowOpen)
+    : selected === cwd
+      ? [...paths, cwd]
+      : paths;
   const { modules, limits, error, refresh } = useGitSubmodules(discoveryRoots, enabled, true);
   const connectionShownCentrally = useConnectionErrorShownCentrally(error);
   // Another listed worktree is never a repository of this one, even when it sits inside its folder.
-  const sections = checkoutRepositoryPaths(checkouts ? discoveryRoots : paths, modules).filter(
+  const sections = checkoutRepositoryPaths(checkouts ? sectionRoots : paths, modules).filter(
     (path) =>
       !checkouts ||
-      discoveryRoots.some((root) => same(root, path)) ||
+      sectionRoots.some((root) => same(root, path)) ||
       !paths.some((other) => same(other, path)),
   );
   const narrowed = checkouts && only ? sections.find((path) => same(path, only)) : undefined;

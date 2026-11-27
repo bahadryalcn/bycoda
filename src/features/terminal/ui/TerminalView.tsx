@@ -66,6 +66,8 @@ type Props = {
   /** Canonical SSH-only connection. No local profile, cwd or launch replay. */
   sshConnectionId?: string;
   sshProject?: SshProjectTerminal;
+  /** Remote project whose Host runs this shell in `cwd`; used when its machine has no SSH. */
+  hostShellProject?: string;
   /** Quick connections remain ephemeral and use the same native SSH engine. */
   sshEndpoint?: SshEndpoint;
   shellIntegration?: "auto" | "bash" | "zsh" | "powershell";
@@ -135,6 +137,7 @@ export function TerminalView({
   profile,
   sshConnectionId,
   sshProject,
+  hostShellProject,
   sshEndpoint,
   shellIntegration,
   agentForwardingReviewId,
@@ -175,7 +178,9 @@ export function TerminalView({
     typographyRef.current = { fontSize, lineHeight };
     zoomSizeRef.current = null;
   }, [fontSize, lineHeight]);
-  const privateTerminal = Boolean(sshConnectionId || sshEndpoint || keyGenerationPath);
+  const privateTerminal = Boolean(
+    sshConnectionId || sshEndpoint || keyGenerationPath || hostShellProject,
+  );
   const integrated = Boolean(
     (shellIntegration === "auto" ||
       shellIntegration === "bash" ||
@@ -304,6 +309,7 @@ export function TerminalView({
         agentForwardingReviewId,
         expectedConfigurationDigest,
         httpProxyTicketId,
+        hostShellProject,
         cwd,
         profile: () => getProfile(),
       }),
@@ -476,6 +482,7 @@ export function TerminalView({
     id,
     sshConnectionId,
     sshProject,
+    hostShellProject,
     sshEndpoint,
     shellIntegration,
     agentForwardingReviewId,

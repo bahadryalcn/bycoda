@@ -19,6 +19,7 @@ import {
 } from "../model/terminalLaunchCommand";
 import { terminalInput } from "../model/terminalInput";
 import { loadTerminalProfile } from "../model/terminalProfiles";
+import { createHostShell } from "./hostShell";
 
 export type TerminalLifecycleState = "opened-on-computer" | "exited" | "failed" | "closed";
 export type TerminalShellIntegration = "auto" | "bash" | "zsh" | "powershell";
@@ -43,6 +44,8 @@ export type TerminalPtyLaunch =
       agentForwardingReviewId?: string;
       httpProxyTicketId?: string;
     }
+  /** A shell the remote project's Host runs itself, for machines without saved SSH. */
+  | { kind: "host"; projectCwd: string; cwd: string }
   | { kind: "local"; cwd: string; profile: () => string | undefined };
 
 export type TerminalPtyLaunchInput = {
@@ -54,11 +57,13 @@ export type TerminalPtyLaunchInput = {
   agentForwardingReviewId?: string;
   expectedConfigurationDigest?: string;
   httpProxyTicketId?: string;
+  /** Remote project whose Host runs the shell in `cwd`. */
+  hostShellProject?: string;
   cwd: string;
   profile: () => string | undefined;
 };
 
-/** Same precedence the view always used: key generation, saved SSH, quick SSH, local. */
+/** Precedence: key generation, saved SSH, quick SSH, Host shell, local. */
 export function terminalPtyLaunch(input: TerminalPtyLaunchInput): TerminalPtyLaunch {
   if (input.keyGenerationPath) return { kind: "key-generation", path: input.keyGenerationPath };
   if (input.sshConnectionId)
@@ -79,6 +84,8 @@ export function terminalPtyLaunch(input: TerminalPtyLaunchInput): TerminalPtyLau
       agentForwardingReviewId: input.agentForwardingReviewId,
       httpProxyTicketId: input.httpProxyTicketId,
     };
+  if (input.hostShellProject)
+    return { kind: "host", projectCwd: input.hostShellProject, cwd: input.cwd };
   return { kind: "local", cwd: input.cwd, profile: input.profile };
 }
 
@@ -153,11 +160,49 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
     true,
   );
 
+  const handleExit = (code: number | null | undefined, outputComplete?: boolean) => {
+    if (closed) return;
+    if (outputComplete === false)
+      failRun("Command exited, but complete terminal output could not be confirmed.");
+    exited = true;
+    spawned = false;
+    input.dispose();
+    options.lifecycle("exited");
+    options.onExit(code);
+    const completed = run;
+    run = undefined;
+    if (completed) {
+      const tail = decoder.decode();
+      if (tail) completed.onOutput(tail);
+      completed.onExit(code ?? null);
+    }
+    const status = code == null ? "" : ` (${code})`;
+    output.append(`\r\n[process exited${status}]\r\n`);
+  };
+
+  const hostShell =
+    launch.kind === "host"
+      ? createHostShell(launch, {
+          onOutput: (data) => {
+            if (!closed) output.append(data);
+          },
+          onExit: (code) => handleExit(code),
+          onFailure: (reason) => {
+            if (closed) return;
+            exited = true;
+            spawned = false;
+            input.dispose();
+            options.onInputFailure(reason);
+          },
+        })
+      : undefined;
+  const send = (data: string) => (hostShell ? hostShell.write(data) : writePty(id, data));
+
   const input = terminalInput(
     async (data) => {
       await starting;
       if (closed || exited) throw new Error("Terminal is disconnected.");
-      await writePty(id, data);
+      await send(data);
     },
     (error) => {
       if (closed) return;
@@ -170,6 +215,10 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
     const next = options.isVisible();
     if (next === reportedVisible) return;
     reportedVisible = next;
+    if (hostShell) {
+      hostShell.setVisible(next);
+      return;
+    }
     void setPtyVisible(id, next).catch(() => {
       if (reportedVisible === next) reportedVisible = undefined;
     });
@@ -219,6 +268,8 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
           ...(launch.httpProxyTicketId ? { httpProxyTicketId: launch.httpProxyTicketId } : {}),
         });
       }
+      case "host":
+        return hostShell!.start(cols, rows);
       case "local": {
         const profile = launch.profile() ?? loadTerminalProfile();
         if (!run) return spawnPty(id, launch.cwd, cols, rows, profile);
@@ -236,38 +287,23 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
   const subscribeAndSpawn = async () => {
     if (closed) return;
     if (!privateTerminal && launch.kind === "local") run = takeTerminalRun(id);
-    unsubscribe = subscribePty(
-      id,
-      (data, consumed) => {
-        if (closed) {
-          consumed?.();
-          return;
-        }
-        if (run) run.onOutput(decoder.decode(data, { stream: true }));
-        output.append(data, consumed);
-      },
-      (code, outputComplete) => {
-        if (closed) return;
-        if (outputComplete === false)
-          failRun("Command exited, but complete terminal output could not be confirmed.");
-        exited = true;
-        spawned = false;
-        input.dispose();
-        options.lifecycle("exited");
-        options.onExit(code);
-        const completed = run;
-        run = undefined;
-        if (completed) {
-          const tail = decoder.decode();
-          if (tail) completed.onOutput(tail);
-          completed.onExit(code ?? null);
-        }
-        const status = code == null ? "" : ` (${code})`;
-        output.append(`\r\n[process exited${status}]\r\n`);
-      },
-      true,
-    );
-    await readyPtyBridge();
+    // A Host shell delivers output through its own reads, not the native PTY bridge.
+    if (!hostShell) {
+      unsubscribe = subscribePty(
+        id,
+        (data, consumed) => {
+          if (closed) {
+            consumed?.();
+            return;
+          }
+          if (run) run.onOutput(decoder.decode(data, { stream: true }));
+          output.append(data, consumed);
+        },
+        handleExit,
+        true,
+      );
+      await readyPtyBridge();
+    }
     if (closed) return;
     const stale = () => !!options.canStart.current && !options.canStart.current();
     if (stale()) throw new Error("Reviewed terminal source changed or became private");
@@ -291,7 +327,8 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
       .then(() => {
         unsubscribe();
         unsubscribe = () => {};
-        return didStart ? killPty(id) : undefined;
+        if (!didStart) return undefined;
+        return hostShell ? hostShell.close() : killPty(id);
       })
       .then(
         () => {
@@ -342,7 +379,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
             reportVisibility();
             options.onSpawned();
             const command = privateTerminal ? undefined : takeTerminalCommand(id);
-            if (command) return writePty(id, `${command}\r`);
+            if (command) return send(`${command}\r`);
           }
         })
         .catch((error) => {
@@ -380,7 +417,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
     reportVisibility,
     resize(cols: number, rows: number): Promise<void> {
       return (starting ?? Promise.resolve()).then(() =>
-        closed ? undefined : resizePty(id, cols, rows),
+        closed ? undefined : hostShell ? hostShell.resize(cols, rows) : resizePty(id, cols, rows),
       );
     },
     /** Stop view-driven input and output delivery. The process is not touched. */

@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Code } from "../../../shared/ui/Code";
@@ -52,8 +52,6 @@ export function DataSharingNotices() {
   const pending = useSyncExternalStore(dataTransfers.subscribe, dataTransfers.pending);
   const receipts = useSyncExternalStore(dataTransfers.subscribe, dataTransfers.receipts);
   const showReceipts = useSyncExternalStore(sharingNotices.subscribe, sharingNotices.load);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Automatic review timers run only while the notice surface is mounted.
-  useEffect(() => dataTransfers.present(), []);
   const [openedId, setOpenedId] = useState<number | null>(null);
   const [failedSaveId, setFailedSaveId] = useState<number | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLButtonElement | null>(null);
@@ -73,6 +71,20 @@ export function DataSharingNotices() {
     setMenuAnchor(null);
     setOpenedId(id);
   };
+  // An answer moves the open details on to the next queued request, so one review answers every
+  // request waiting at that moment and the notice closes with the last one.
+  const answer = (decide: () => void) => {
+    decide();
+    const next = dataTransfers.pending();
+    if (!next) {
+      close();
+      return;
+    }
+    next.inspect(true);
+    setMenuAnchor(null);
+    setFailedSaveId(null);
+    setOpenedId(next.id);
+  };
   // Always send and Never send persist the category's mode before deciding this transfer.
   const saveMode = (mode: Extract<SharingMode, "auto" | "off">) => {
     if (!openPending) return;
@@ -80,8 +92,7 @@ export function DataSharingNotices() {
       setFailedSaveId(openPending.id);
       return;
     }
-    openPending.decide(mode === "auto");
-    close();
+    answer(() => openPending.decide(mode === "auto"));
   };
   const latestReceipt = showReceipts ? receipts[receipts.length - 1] : undefined;
   return (
@@ -90,7 +101,7 @@ export function DataSharingNotices() {
         <Toast
           key={`pending-${pending.id}`}
           tone="info"
-          title={pending.automatic ? t("Automatic sharing is ready") : t("Approve data sharing")}
+          title={t("Approve data sharing")}
           message={sharingTitle(pending.kind)}
           durationMs={null}
           action={{
@@ -146,10 +157,7 @@ export function DataSharingNotices() {
                           onClose={() => setMenuAnchor(null)}
                           onPick={(id) => {
                             if (id === "never") saveMode("off");
-                            if (id === "later") {
-                              openPending.decide(false, "user");
-                              close();
-                            }
+                            if (id === "later") answer(() => openPending.decide(false, "user"));
                           }}
                         />
                       )}
@@ -160,20 +168,14 @@ export function DataSharingNotices() {
                 {!isActivityReview && (
                   <Button
                     variant="ghost"
-                    onClick={() => {
-                      openPending.decide(false, "user");
-                      close();
-                    }}
+                    onClick={() => answer(() => openPending.decide(false, "user"))}
                   >
                     {t("Do not send")}
                   </Button>
                 )}
                 <Button
                   variant="secondary"
-                  onClick={() => {
-                    openPending.decide(true, "user");
-                    close();
-                  }}
+                  onClick={() => answer(() => openPending.decide(true, "user"))}
                 >
                   {t("Send once")}
                 </Button>
@@ -185,8 +187,7 @@ export function DataSharingNotices() {
                         setFailedSaveId(openPending.id);
                         return;
                       }
-                      openPending.decide(true);
-                      close();
+                      answer(() => openPending.decide(true));
                     }}
                   >
                     {t("Send for today")}
@@ -202,11 +203,6 @@ export function DataSharingNotices() {
           <div className="grid gap-4">
             {openPending && failedSaveId === openPending.id && (
               <InlineError>{t("Could not save changes")}</InlineError>
-            )}
-            {openPending?.automatic && (
-              <Text as="p" size="caption" tone="secondary">
-                {t("Automatic sending pauses while you review this report.")}
-              </Text>
             )}
             <DescriptionList>
               <DescriptionItem term={t("Destination")}>
