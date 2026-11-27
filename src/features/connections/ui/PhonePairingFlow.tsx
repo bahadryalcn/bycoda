@@ -16,7 +16,9 @@ import { t, useLocale } from "../../../shared/i18n";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { ModalActions, ModalFooter } from "../../../shared/ui/Modal";
-import { CheckCircle, ExternalLink, RefreshCw } from "../../../shared/ui/icons";
+import { CheckCircle, Copy, ExternalLink, RefreshCw } from "../../../shared/ui/icons";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { copyText } from "../../../platform/tauri/clipboard";
 import { isLocalSyncMachine } from "../model/localSync";
 import { PhoneNetworkField } from "./PhoneNetworkField";
 import type {
@@ -24,6 +26,30 @@ import type {
   PhonePairingLinkProps,
   PhonePairingLinkStatus,
 } from "../model/phonePairingTypes";
+
+/** Copies the pairing code for the phone's "Paste pairing code", for when the camera cannot scan. */
+function CopyPairingCode({ text }: { text: string }) {
+  const copyFeedback = useCopyFeedback();
+  return (
+    <>
+      <Button
+        stableWidth
+        type="button"
+        className="shrink-0"
+        disabled={copyFeedback.pending}
+        success={copyFeedback.copied}
+        successLabel={t("Code copied")}
+        onClick={() => copyFeedback.copy(() => copyText(text))}
+      >
+        <Copy className="icon-sm" aria-hidden />
+        {t("Copy code")}
+      </Button>
+      {copyFeedback.failed ? (
+        <InlineMessage tone="danger">{t("The code could not be copied. Try again.")}</InlineMessage>
+      ) : null}
+    </>
+  );
+}
 
 function PhonePairingLink({ url, label }: PhonePairingLinkProps) {
   const [status, setStatus] = useState<PhonePairingLinkStatus>("idle");
@@ -130,6 +156,8 @@ export function PhonePairingFlow({
     "Public internet: anyone can reach this address, and the phone is protected only by this one-time code and its device credential. Use it only away from your own networks.",
   );
   const busy = ["checking", "enabling", "creating"].includes(state.stage);
+  // The QR and the copied code carry the same text; the phone reads either.
+  const codeText = state.stage === "qr" ? JSON.stringify(state.session.code) : "";
   const interfaces = (state.stage === "access" && state.access.addressInterfaces) || {};
   const networkHint = state.stage === "access" ? state.access.networkHint : undefined;
   const addresses = state.stage === "access" ? (state.access.addresses ?? []) : [];
@@ -263,13 +291,15 @@ export function PhonePairingFlow({
         <div className="phone-pairing-code">
           {mode === "public" ? <InlineMessage tone="warning">{publicWarning}</InlineMessage> : null}
           <Text as="p" size="secondary" className="text-center">
-            {t("On your phone, open Connections and choose Scan QR code.")}
+            {t(
+              "On your phone, open Connections and choose Scan QR code. Without a camera, copy the code and choose Paste pairing code.",
+            )}
           </Text>
           <div
             {...surfaceAttributes({ frame: "card", radius: "card", variant: "on-solid" }, "p-2")}
           >
             <QRCodeSVG
-              value={JSON.stringify(state.session.code)}
+              value={codeText}
               size={260}
               marginSize={4}
               level="M"
@@ -299,6 +329,7 @@ export function PhonePairingFlow({
             </Alert>
           ) : null}
           <div className="phone-pairing-actions">
+            <CopyPairingCode key={codeText} text={codeText} />
             <Button stableWidth type="button" className="shrink-0" onClick={onRegenerate}>
               <RefreshCw className="icon-sm" aria-hidden />
               {t("Create a new code")}

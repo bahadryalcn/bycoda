@@ -106,6 +106,8 @@ it("suggests the host's own name only for a raw IP and a hostname-shaped name", 
   expect(hostnameSuggestion("192.168.1.5", "mini.local")).toBe("mini.local");
   expect(hostnameSuggestion("me@mini.local", "other.local")).toBeUndefined();
   expect(hostnameSuggestion("me@192.168.1.5", "Home Mac")).toBeUndefined();
+  // A tailnet address reaches the machine anywhere; its .local name would not.
+  expect(hostnameSuggestion("me@100.97.82.0", "Alex-MacBook-Pro.local")).toBeUndefined();
   expect(hostnameSuggestion("me@192.168.1.5", "ubuntu")).toBeUndefined();
   expect(hostnameSuggestion("me@192.168.1.5", "-x.local")).toBeUndefined();
   expect(hostnameSuggestion("me@192.168.1.5", "")).toBeUndefined();

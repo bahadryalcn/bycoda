@@ -70,7 +70,7 @@ async function publishedTunnelEndpoint(machine: RemoteMachine): Promise<string |
 }
 
 /**
- * While signed in and "Let my signed-in phones find this computer" is on: publishes this
+ * While signed in and "Let my signed-in devices find this computer" is on: publishes this
  * computer's phone routes to the account and asks the owner before a signed-in phone or computer is allowed
  * to connect. Renders only the approval dialog. Mount once with the workspace notices.
  */

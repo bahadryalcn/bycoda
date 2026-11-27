@@ -12,7 +12,16 @@ export type DeviceProofBinding = { jkt: string; x: string };
 
 export type DeviceProofRefusal = "proof-required" | "invalid-proof" | "replayed-proof";
 
-export type DeviceProofResult = { ok: true } | { ok: false; reason: DeviceProofRefusal };
+/**
+ * What a pairing client offered to tie its new credential to an earlier one of the same client:
+ * the thumbprint of the earlier key (only when it proved possession in this redemption) and the
+ * install ID it reported (an identifier, not a proof). `HostStore.issueDevice` applies both.
+ */
+export type DeviceReplacement = { jkt?: string; installId?: string };
+
+export type DeviceProofResult =
+  /** `unsaved`: the client signed this before it saved the credential; see `DeviceProofClaims`. */
+  { ok: true; unsaved?: true } | { ok: false; reason: DeviceProofRefusal };
 
 const MAX_ENTRIES = 100_000;
 
@@ -84,7 +93,7 @@ export function requireDeviceProof(options: {
   });
   if (!verified.ok) return { ok: false, reason: "invalid-proof" };
   return (options.cache ?? hostReplayCache).claim(verified.jti)
-    ? { ok: true }
+    ? { ok: true, ...(verified.unsaved ? { unsaved: true as const } : {}) }
     : { ok: false, reason: "replayed-proof" };
 }
 
@@ -114,7 +123,27 @@ export function deviceProofRefusalBody(reason: DeviceProofRefusal): string {
   return JSON.stringify({ error: "Device proof is missing or invalid", reason });
 }
 
-export type DeviceProofAuthority = { binding?: DeviceProofBinding };
+export type DeviceProofAuthority = {
+  binding?: DeviceProofBinding;
+  /** This credential replaces an earlier one of the same client once it is in use. */
+  replacementPending?: true;
+};
+
+/**
+ * A verified proof of a credential issued by re-pairing shows its client holds it; only the first
+ * one signed after the client saved the credential retires the earlier one. The check a client
+ * runs before saving is marked `unsaved` and retires nothing, so a client whose save then fails
+ * still holds a working credential. A failure never fails the request: the mark stays, so the
+ * next request tries again.
+ */
+export async function completeProvenReplacement(
+  authority: DeviceProofAuthority,
+  proof: DeviceProofResult,
+  complete: () => Promise<unknown>,
+): Promise<void> {
+  if (proof.ok && !proof.unsaved && authority.binding && authority.replacementPending)
+    await complete().catch(() => undefined);
+}
 
 /**
  * Decides one request for any transport. Resolves the caller's credential and ingress itself, so
@@ -131,13 +160,14 @@ export function createDeviceProofGate(options: {
   mobileIngressSecret: () => string | undefined;
   authority: (token: string) => Promise<DeviceProofAuthority | undefined>;
   cache?: DeviceProofReplayCache;
+  completeReplacement?: (token: string) => Promise<unknown>;
 }): DeviceProofGate {
   return async (request, token) => {
     const ingress = requestIngress(request, options.mobileIngressSecret());
     if (ingress === "invalid") return { ok: false, reason: "invalid-proof" };
     const authority = await options.authority(token);
     if (!authority) return { ok: true };
-    return checkDeviceProof({
+    const proof = checkDeviceProof({
       request,
       token,
       environmentId: options.environmentId,
@@ -145,5 +175,8 @@ export function createDeviceProofGate(options: {
       binding: authority.binding,
       cache: options.cache,
     });
+    const complete = options.completeReplacement;
+    if (complete) await completeProvenReplacement(authority, proof, () => complete(token));
+    return proof;
   };
 }

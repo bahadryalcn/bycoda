@@ -14,11 +14,18 @@ use std::time::{Duration, Instant};
 /// "Machine is unreachable" prefix it shares with `CONNECTION_REFUSED`.
 pub(super) const LOCAL_HOST_REFUSED: &str =
     "Machine is unreachable. bycoda Host on this computer is not answering; it may still be starting or it is stopped.";
+/// Refusal text for the Host on this computer while this app installs an update
+/// of it; same prefix as `LOCAL_HOST_REFUSED`.
+pub(super) const LOCAL_HOST_UPDATING: &str =
+    "Machine is unreachable. bycoda Host on this computer is being updated and will be back shortly.";
 
 /// The Host binds its port last, up to about 30 s after its process starts.
 /// A Host that still refuses after this window is treated as stopped, and
 /// requests to it fail at once again.
 const RESTART_WINDOW: Duration = Duration::from_secs(45);
+/// A Host update stops the Host for about a minute. An ownerless installer lock
+/// stays "held" until it is stale, so the update wait is capped on its own.
+const UPDATE_WINDOW: Duration = Duration::from_secs(180);
 const PROBE_INTERVAL: Duration = Duration::from_millis(250);
 /// An unreachable Host fails every request; the log gets one line per interval.
 const WARN_INTERVAL: Duration = Duration::from_secs(30);
@@ -53,6 +60,13 @@ pub(super) struct Exchange<'a> {
     method: &'a str,
     started: Instant,
     timeout: Duration,
+    /// Whether this app is installing a Host update now, which stops the Host on purpose.
+    updating: fn() -> bool,
+}
+
+/// The bundled-Host installer holds its lock while it replaces the Host on this computer.
+fn local_host_updating() -> bool {
+    crate::bundled_host::data_dir().is_some_and(|base| crate::bundled_host::install_running(&base))
 }
 
 impl<'a> Exchange<'a> {
@@ -68,6 +82,7 @@ impl<'a> Exchange<'a> {
             method,
             started: Instant::now(),
             timeout,
+            updating: local_host_updating,
         }
     }
 
@@ -92,7 +107,14 @@ impl<'a> Exchange<'a> {
 
     pub(super) fn refused_message(&self) -> &'static str {
         if local_endpoints::contains(self.endpoint) {
-            LOCAL_HOST_REFUSED
+            let within_update = health().with(self.endpoint, |health| {
+                health.down_since.is_none_or(|since| since.elapsed() < UPDATE_WINDOW)
+            });
+            if within_update && (self.updating)() {
+                LOCAL_HOST_UPDATING
+            } else {
+                LOCAL_HOST_REFUSED
+            }
         } else {
             super::CONNECTION_REFUSED
         }
@@ -215,14 +237,15 @@ impl TransportHealth {
     }
 
     /// The endpoint answered earlier in this process and has not refused for
-    /// longer than a Host start takes.
-    fn may_be_restarting(&self, endpoint: &str) -> bool {
-        self.with(endpoint, |health| {
-            health.reached
-                && health
-                    .down_since
-                    .is_none_or(|since| since.elapsed() < RESTART_WINDOW)
-        })
+    /// longer than a Host start takes, or this app is replacing the Host now:
+    /// the first launch after an app update installs its Host before that Host
+    /// ever answered, for longer than a plain start takes.
+    fn may_be_restarting(&self, exchange: &Exchange<'_>) -> bool {
+        let (restarting, updating_window) = self.with(exchange.endpoint, |health| {
+            let within = |window| health.down_since.is_none_or(|since| since.elapsed() < window);
+            (health.reached && within(RESTART_WINDOW), within(UPDATE_WINDOW))
+        });
+        restarting || (updating_window && (exchange.updating)())
     }
 
     fn attempt(
@@ -268,17 +291,14 @@ impl TransportHealth {
             }
         }
         self.failed(exchange, &refusal);
-        if !super::connection_refused(&refusal)
-            || !self.may_be_restarting(exchange.endpoint)
-            || !local()
-        {
+        if !super::connection_refused(&refusal) || !local() || !self.may_be_restarting(exchange) {
             return Err(refusal);
         }
         // Nothing was delivered by the refused attempt. Probe the port and send
         // the request for the first time once it accepts connections.
         let deadline = exchange.started + exchange.timeout;
         loop {
-            if !self.may_be_restarting(exchange.endpoint) {
+            if !self.may_be_restarting(exchange) {
                 return Err(refusal);
             }
             let accepts = listening(deadline);
@@ -320,8 +340,12 @@ mod tests {
         ureq::Response::new(200, "OK", "{}").map_err(Box::new)
     }
 
+    /// No Host update in progress: the real installer lock belongs to this machine, not the test.
     fn exchange(endpoint: &str, timeout: Duration) -> Exchange<'_> {
-        Exchange::new(endpoint, Some("host.1"), "environment.describe", timeout)
+        Exchange {
+            updating: || false,
+            ..Exchange::new(endpoint, Some("host.1"), "environment.describe", timeout)
+        }
     }
 
     /// An endpoint that answered once, as the Host did before it restarted.
@@ -422,6 +446,49 @@ mod tests {
     }
 
     #[test]
+    fn a_local_host_being_updated_is_waited_for_even_before_it_ever_answered() {
+        let health = TransportHealth::default();
+        let endpoint = "http://127.0.0.1:3776";
+        let attempts = Cell::new(0);
+        let probes = Cell::new(0);
+        let updating = Exchange {
+            updating: || true,
+            ..exchange(endpoint, Duration::from_secs(5))
+        };
+        let response = health.send(
+            &updating,
+            || true,
+            |_| {
+                probes.set(probes.get() + 1);
+                probes.get() >= 2
+            },
+            |_| {
+                attempts.set(attempts.get() + 1);
+                if attempts.get() == 1 {
+                    Err(refused())
+                } else {
+                    answered()
+                }
+            },
+        );
+        assert_eq!(response.unwrap().status(), 200);
+        assert_eq!(attempts.get(), 2);
+        // A remote endpoint is never waited for, whatever this computer's installer does.
+        let probe = |_: Instant| -> bool { panic!("A remote machine was probed") };
+        assert!(health
+            .send(
+                &Exchange {
+                    updating: || true,
+                    ..exchange("http://127.0.0.1:50124", Duration::from_secs(30))
+                },
+                || false,
+                probe,
+                |_| Err(refused()),
+            )
+            .is_err());
+    }
+
+    #[test]
     fn a_host_refusing_longer_than_a_start_takes_fails_at_once() {
         let health = TransportHealth::default();
         let endpoint = "http://127.0.0.1:3776";
@@ -437,6 +504,30 @@ mod tests {
                 &exchange(endpoint, Duration::from_secs(30)),
                 || true,
                 |_| panic!("A stopped Host was probed"),
+                |_| Err(refused()),
+            )
+            .is_err());
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn an_update_lock_that_outlives_an_update_stops_holding_requests() {
+        let health = TransportHealth::default();
+        let endpoint = "http://127.0.0.1:3776";
+        let Some(long_ago) = Instant::now().checked_sub(UPDATE_WINDOW + Duration::from_secs(1))
+        else {
+            return;
+        };
+        health.with(endpoint, |health| health.down_since = Some(long_ago));
+        let started = Instant::now();
+        assert!(health
+            .send(
+                &Exchange {
+                    updating: || true,
+                    ..exchange(endpoint, Duration::from_secs(30))
+                },
+                || true,
+                |_| panic!("A Host past any update was probed"),
                 |_| Err(refused()),
             )
             .is_err());
@@ -593,6 +684,11 @@ mod tests {
             LOCAL_HOST_REFUSED
         ));
         assert!(super::super::CONNECTION_REFUSED.starts_with("Machine is unreachable"));
+        assert!(LOCAL_HOST_UPDATING.starts_with("Machine is unreachable"));
+        assert!(!LOCAL_HOST_UPDATING.to_ascii_lowercase().contains("ssh"));
+        assert!(crate::remote_routes::port_may_have_moved(
+            LOCAL_HOST_UPDATING
+        ));
     }
 
     #[test]

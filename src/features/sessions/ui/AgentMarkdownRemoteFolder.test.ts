@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
+import { TranscriptToolPaths } from "./TranscriptToolPaths";
 import { openErrorDetails } from "./errorDetails.fixture";
 
 async function rawDetails(scope: ParentNode = document): Promise<string> {
@@ -185,6 +186,28 @@ it("browses remote folders and opens their files at exact paths", async () => {
     exact: true,
   });
   expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+it("opens a bare remote file beside files the session's tools touched", async () => {
+  const expected = "remote://env/tools/bykit/src/read.rs";
+  actions.statFiles.mockImplementation(async (paths: string[]) =>
+    paths.map((path) => ({ path, mtimeMs: path === expected ? 1 : null })),
+  );
+  await act(async () =>
+    root.render(
+      createElement(
+        TranscriptToolPaths.Provider,
+        { value: () => ["remote://env/tools/bykit/src/port.rs"] },
+        createElement(AgentMarkdown, {
+          text: "Now the outline work in `read.rs`.",
+          cwd: "remote://env/repo",
+          onOpenFile,
+        }),
+      ),
+    ),
+  );
+  await act(async () => container.querySelector<HTMLElement>('code[role="link"]')!.click());
+  expect(actions.browseDirectory).toHaveBeenCalledWith(expected);
+  expect(onOpenFile).toHaveBeenCalledWith(expected, undefined);
 });
 it("opens a remote file's containing folder from the context menu", async () => {
   await render("[Summary](/repo/assets/özet.md)");

@@ -131,8 +131,30 @@ it("shows the reason when the host cannot be started", async () => {
   expect(document.body.textContent).toContain("did not start");
 });
 
-it("stays silent while the host runs, starts or updates", async () => {
-  for (const state of ["running", "starting", "updating", "absent", "unknown"]) {
+it("explains an update without offering a start, and a dismissal does not hide a later stop", async () => {
+  host.state = "updating";
+  await render();
+  await poll();
+  await openNotifications();
+  expect(notice()?.textContent).toContain("being updated");
+  expect(
+    [...notice()!.querySelectorAll("button")].some((button) =>
+      button.textContent?.includes("Start host"),
+    ),
+  ).toBe(false);
+  await act(async () => {
+    notice()!.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]')!.click();
+  });
+  expect(notice()).toBeNull();
+
+  host.state = "stopped";
+  await poll();
+  await poll();
+  expect(notice()?.textContent).toContain("not running");
+});
+
+it("stays silent while the host runs or starts", async () => {
+  for (const state of ["running", "starting", "absent", "unknown"]) {
     host.state = state;
     await render();
     await poll();

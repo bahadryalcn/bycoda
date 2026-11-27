@@ -31,6 +31,9 @@ pub struct MachineCandidate {
     already_added: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     group: Option<String>,
+    /// Names that identify this machine for merging and "already added" without being routes.
+    #[serde(skip)]
+    aliases: Vec<String>,
 }
 #[derive(Clone, Debug, Serialize)]
 struct Route {
@@ -81,7 +84,21 @@ fn route(address: &str) -> Route {
         kind: kind.into(),
     }
 }
+/// A route that keeps an SSH port other than 22 in its address: `host:2222` or `[v6]:2222`.
+fn route_on_port(host: &str, port: u16) -> Route {
+    let mut route = route(host);
+    if port != 22 {
+        route.address = if route.address.contains(':') {
+            format!("[{}]:{port}", route.address)
+        } else {
+            format!("{}:{port}", route.address)
+        };
+    }
+    route
+}
+/// A candidate for `host`, which may carry an SSH port (`host:2222`, `[v6]:2222`).
 fn candidate(host: &str, source: &str) -> MachineCandidate {
+    let port = socket_target(host.trim().rsplit('@').next().unwrap_or("")).1;
     let host = normalized(host);
     MachineCandidate {
         key: host.clone(),
@@ -89,11 +106,12 @@ fn candidate(host: &str, source: &str) -> MachineCandidate {
         os: None,
         online: None,
         sources: vec![source.into()],
-        routes: vec![route(&host)],
+        routes: vec![route_on_port(&host, port)],
         environment_id: None,
         ssh_user: None,
         already_added: false,
         group: None,
+        aliases: Vec::new(),
     }
 }
 fn parse_tailscale(text: &str) -> Vec<MachineCandidate> {
@@ -120,14 +138,22 @@ fn parse_tailscale(text: &str) -> Vec<MachineCandidate> {
             let mut c = candidate(name, "tailscale");
             c.key = id.into();
             c.name = name.trim_end_matches('.').into();
+            // HostName is a display name ("Jane's MacBook Pro"); only MagicDNS and the
+            // tailnet addresses are names SSH can dial.
             c.routes.clear();
-            c.routes.push(route(name));
             if let Some(dns) = p
                 .get("DNSName")
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty())
             {
                 c.routes.push(route(dns));
+                // known_hosts and ~/.ssh/config usually hold the short MagicDNS label. It joins
+                // those rows to this peer but is no route of its own: the full name already
+                // dials the peer without a search domain, and a row that used the short name
+                // brings it along as a route.
+                if let Some(label) = normalized(dns).split('.').next().filter(|s| !s.is_empty()) {
+                    c.aliases.push(label.to_owned());
+                }
             }
             if let Some(ips) = p.get("TailscaleIPs").and_then(Value::as_array) {
                 for ip in ips.iter().filter_map(Value::as_str) {
@@ -193,13 +219,7 @@ fn known_hosts(text: &str) -> Vec<String> {
         })
         .flat_map(|s| s.split(','))
         .filter(|s| !s.starts_with('|') && !s.contains(['*', '?', '!']))
-        .map(|s| {
-            if let Some(v) = s.strip_prefix('[') {
-                v.split(']').next().unwrap_or(v).to_owned()
-            } else {
-                s.to_owned()
-            }
-        })
+        .map(str::to_owned)
         .collect()
 }
 
@@ -356,15 +376,8 @@ fn ssh_sources() -> Vec<MachineCandidate> {
                     }
                 }
                 if let Some(host) = resolved_host {
-                    let mut resolved = route(&host);
-                    if let Some(port) = resolved_port.filter(|port| *port != 22) {
-                        resolved.address = if host.contains(':') {
-                            format!("[{host}]:{port}")
-                        } else {
-                            format!("{host}:{port}")
-                        };
-                    }
-                    c.routes.push(resolved);
+                    c.routes
+                        .push(route_on_port(&host, resolved_port.unwrap_or(22)));
                 }
             }
             out.push(c);
@@ -388,13 +401,7 @@ fn merge(mut all: Vec<MachineCandidate>) -> Vec<MachineCandidate> {
     while let Some(mut c) = all.pop() {
         let mut index = 0;
         while index < out.len() {
-            if c.routes.iter().any(|a| {
-                out[index]
-                    .routes
-                    .iter()
-                    .any(|b| normalized(&a.address) == normalized(&b.address))
-            }) || c.key == out[index].key
-            {
+            if same_machine(&c, &out[index]) {
                 let other = out.remove(index);
                 if other.sources.iter().any(|s| s == "tailscale")
                     && !c.sources.iter().any(|s| s == "tailscale")
@@ -415,7 +422,24 @@ fn merge(mut all: Vec<MachineCandidate>) -> Vec<MachineCandidate> {
     out.sort_by_key(|a| a.name.to_lowercase());
     out
 }
+/// Two rows are one machine when they share a key or a route host, or when one's alias is a
+/// route host of the other. Two aliases alone never match: they are not addresses anyone dialed.
+fn same_machine(a: &MachineCandidate, b: &MachineCandidate) -> bool {
+    let hosts = |c: &MachineCandidate| -> Vec<String> {
+        c.routes.iter().map(|r| normalized(&r.address)).collect()
+    };
+    let (a_hosts, b_hosts) = (hosts(a), hosts(b));
+    a.key == b.key
+        || a_hosts.iter().any(|host| b_hosts.contains(host))
+        || a.aliases.iter().any(|alias| b_hosts.contains(alias))
+        || b.aliases.iter().any(|alias| a_hosts.contains(alias))
+}
 fn combine(a: &mut MachineCandidate, b: MachineCandidate) {
+    for alias in b.aliases {
+        if !a.aliases.contains(&alias) {
+            a.aliases.push(alias);
+        }
+    }
     for source in b.sources {
         if !a.sources.contains(&source) {
             a.sources.push(source);
@@ -531,27 +555,30 @@ fn socket_target(address: &str) -> (String, u16) {
     }
     (address.into(), 22)
 }
-fn ssh_port_answers(addresses: &[String], deadline: Instant) -> bool {
-    for address in addresses {
-        let (host, port) = socket_target(address);
-        let Ok(resolved) = (host.as_str(), port).to_socket_addrs() else {
-            continue;
-        };
-        for socket in resolved {
-            let left = deadline.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                return false;
-            }
-            if TcpStream::connect_timeout(&socket, left).is_ok() {
-                return true;
-            }
+/// At most this many addresses of one row are probed, so a pass starts a bounded number of threads.
+const PROBE_ROUTES: usize = 4;
+fn ssh_port_answers(address: &str, deadline: Instant) -> bool {
+    let (host, port) = socket_target(address);
+    let Ok(resolved) = (host.as_str(), port).to_socket_addrs() else {
+        return false;
+    };
+    for socket in resolved {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return false;
+        }
+        if TcpStream::connect_timeout(&socket, left).is_ok() {
+            return true;
         }
     }
     false
 }
-/// Marks rows no other source vouched for as online when their SSH port accepts a connection
-/// before `deadline`. A row that does not answer in time (closed port, other network, stalled
-/// name lookup) is offline for this pass. Saved rows and rows with a known state are skipped.
+/// Marks rows no other source vouched for as online when one of their SSH ports accepts a
+/// connection before `deadline`. A row whose addresses do not answer in time (closed port, other
+/// network, stalled name lookup) is offline for this pass. Each address is probed on its own
+/// thread: an SSH alias that is no DNS name can stall its lookup past the deadline and must not
+/// hide the answering HostName beside it. Saved rows, rows with a known state and rows without
+/// an address to probe are skipped.
 fn probe_reachability(list: &mut [MachineCandidate], deadline: Instant) {
     let (tx, rx) = mpsc::channel();
     let mut probed = Vec::new();
@@ -561,16 +588,22 @@ fn probe_reachability(list: &mut [MachineCandidate], deadline: Instant) {
         .filter(|(_, c)| c.online.is_none() && !c.already_added)
         .take(PROBE_LIMIT)
     {
-        let addresses: Vec<String> = c
-            .routes
-            .iter()
-            .filter(|r| r.kind != "tunnel")
-            .map(|r| r.address.clone())
-            .collect();
-        let tx = tx.clone();
-        std::thread::spawn(move || {
-            let _ = tx.send((index, ssh_port_answers(&addresses, deadline)));
-        });
+        let mut addresses: Vec<&str> = Vec::new();
+        for r in c.routes.iter().filter(|r| r.kind != "tunnel") {
+            if addresses.len() < PROBE_ROUTES && !addresses.contains(&r.address.as_str()) {
+                addresses.push(&r.address);
+            }
+        }
+        if addresses.is_empty() {
+            continue;
+        }
+        for address in addresses {
+            let address = address.to_owned();
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send((index, ssh_port_answers(&address, deadline)));
+            });
+        }
         probed.push(index);
     }
     drop(tx);
@@ -581,7 +614,9 @@ fn probe_reachability(list: &mut [MachineCandidate], deadline: Instant) {
     while let Ok((index, answered)) =
         rx.recv_timeout(grace.saturating_duration_since(Instant::now()))
     {
-        list[index].online = Some(answered);
+        if answered {
+            list[index].online = Some(true);
+        }
     }
 }
 fn collect_sources(rx: mpsc::Receiver<Source>, timeout: Duration) -> Vec<MachineCandidate> {
@@ -618,7 +653,8 @@ fn collect_sources(rx: mpsc::Receiver<Source>, timeout: Duration) -> Vec<Machine
             .is_some_and(|id| environments.contains(id))
             || c.routes
                 .iter()
-                .any(|r| added.contains(&normalized(&r.address)));
+                .any(|r| added.contains(&normalized(&r.address)))
+            || c.aliases.iter().any(|alias| added.contains(alias));
     }
     result
 }
@@ -735,8 +771,82 @@ mod tests {
         );
         assert_eq!(
             known_hosts("|1|hash key\nfoo,bar key\n[server]:2222 key\n"),
-            vec!["foo", "bar", "server"]
+            vec!["foo", "bar", "[server]:2222"]
         );
+    }
+    #[test]
+    fn known_hosts_entry_keeps_its_port_for_route_and_probe() {
+        let open = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = open.local_addr().unwrap().port();
+        let (tx, rx) = mpsc::channel();
+        tx.send(Source::KnownHosts(format!(
+            "[127.0.0.1]:{port} ssh-ed25519 a2V5\n[2001:db8::1]:2200 ssh-ed25519 b3RoZXI\n[plain]:22 ssh-ed25519 Yw\n"
+        )))
+        .unwrap();
+        drop(tx);
+        let mut rows = collect_sources(rx, Duration::from_millis(50));
+        let address = |rows: &[MachineCandidate], key: &str| {
+            let row = rows.iter().find(|row| row.key == key).unwrap();
+            (row.name.clone(), row.routes[0].address.clone())
+        };
+        assert_eq!(
+            address(&rows, "127.0.0.1"),
+            ("127.0.0.1".into(), format!("127.0.0.1:{port}"))
+        );
+        assert_eq!(
+            address(&rows, "2001:db8::1"),
+            ("2001:db8::1".into(), "[2001:db8::1]:2200".into())
+        );
+        assert_eq!(address(&rows, "plain"), ("plain".into(), "plain".into()));
+        rows.retain(|row| row.key == "127.0.0.1");
+        probe_reachability(&mut rows, Instant::now() + Duration::from_secs(2));
+        assert_eq!(rows[0].online, Some(true));
+    }
+    #[test]
+    fn tailscale_peer_joins_the_ssh_rows_that_use_its_short_name() {
+        let peers = parse_tailscale(
+            r#"{"Self":{"ID":"s","UserID":1},"Peer":{"m":{"ID":"m","HostName":"Jane MacBook Pro","DNSName":"jane-mbp.tail.ts.net.","OS":"macOS","UserID":1,"TailscaleIPs":["100.64.0.9"]},"n":{"ID":"n","HostName":"Jane MacBook Pro","DNSName":"jane-mbp-1.tail.ts.net.","OS":"macOS","UserID":1,"TailscaleIPs":["100.64.0.10"]}}}"#,
+        );
+        let (tx, rx) = mpsc::channel();
+        tx.send(Source::Candidates(peers)).unwrap();
+        tx.send(Source::Candidates(vec![candidate("Jane-MBP", "ssh-config")]))
+            .unwrap();
+        tx.send(Source::KnownHosts(
+            "jane-mbp ssh-ed25519 a2V5\nother ssh-ed25519 b3RoZXI\n".into(),
+        ))
+        .unwrap();
+        tx.send(Source::Inventory(
+            vec![],
+            HashSet::from(["jane-mbp-1".into()]),
+            HashSet::new(),
+        ))
+        .unwrap();
+        drop(tx);
+        let rows = collect_sources(rx, Duration::from_millis(50));
+        assert_eq!(rows.len(), 3);
+        let find = |key: &str| rows.iter().find(|row| row.key == key).unwrap();
+        assert!(find("other").aliases.is_empty());
+        let row = find("m");
+        assert_eq!(row.name, "Jane MacBook Pro");
+        let mut sources = row.sources.clone();
+        sources.sort();
+        assert_eq!(sources, vec!["known-hosts", "ssh-config", "tailscale"]);
+        // The short name is a route only because an SSH source vouches for it.
+        let routes: Vec<_> = row.routes.iter().map(|r| r.address.as_str()).collect();
+        assert_eq!(routes, vec!["jane-mbp.tail.ts.net", "100.64.0.9", "jane-mbp"]);
+        assert!(!row.already_added);
+        // A machine saved under the short name marks its peer, which has no such route.
+        assert!(find("n").already_added);
+        assert_eq!(find("n").routes.len(), 2);
+    }
+    #[test]
+    fn a_tailscale_display_name_is_never_an_ssh_route() {
+        let peers = parse_tailscale(
+            r#"{"Self":{"ID":"s","UserID":1},"Peer":{"m":{"ID":"m","HostName":"Jane MacBook Pro","DNSName":"jane-macbook-pro.tail.ts.net.","OS":"macOS","UserID":1,"TailscaleIPs":["100.64.0.9"]}}}"#,
+        );
+        assert_eq!(peers[0].name, "Jane MacBook Pro");
+        let routes: Vec<_> = peers[0].routes.iter().map(|r| r.address.as_str()).collect();
+        assert_eq!(routes, vec!["jane-macbook-pro.tail.ts.net", "100.64.0.9"]);
     }
     #[test]
     fn git_hosts_are_not_computers() {
@@ -786,6 +896,19 @@ mod tests {
         probe_reachability(&mut list, Instant::now() + Duration::from_secs(2));
         let online: Vec<_> = list.iter().map(|c| c.online).collect();
         assert_eq!(online, vec![Some(true), Some(false), Some(true), None]);
+    }
+    #[test]
+    fn probe_is_not_held_up_by_an_alias_that_is_no_dns_name() {
+        let open = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        // An SSH config row: the alias first, then the HostName it resolves to.
+        let mut alias = candidate("bycoda-probe-alias-that-is-no-dns-name", "ssh-config");
+        alias.routes.push(route("127.0.0.1"));
+        alias.routes[1].address = format!("127.0.0.1:{}", open.local_addr().unwrap().port());
+        let mut list = vec![alias, candidate("box.trycloudflare.com", "ssh-config")];
+        probe_reachability(&mut list, Instant::now() + Duration::from_millis(1000));
+        assert_eq!(list[0].online, Some(true));
+        // A row without an address to probe stays unknown instead of offline.
+        assert_eq!(list[1].online, None);
     }
     #[test]
     fn merges_transitive_routes_and_preserves_tailscale_identity() {

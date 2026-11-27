@@ -134,6 +134,12 @@ export function filterHistory(commits: GitHistoryCommit[], query: string): GitHi
   );
 }
 
+/** A pull refused because local and remote both moved. Git localizes its hints, but the
+ *  config keys it names stay English in every language. */
+export function isDivergedPull(detail: string | undefined): boolean {
+  return !!detail && /advice\.diverging|pull\.rebase|divergent branches/i.test(detail);
+}
+
 export function operationLabel(operation: "merge" | "rebase" | "cherry-pick" | "revert"): string {
   switch (operation) {
     case "rebase":

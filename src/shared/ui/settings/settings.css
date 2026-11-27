@@ -250,6 +250,14 @@
 .settings-row:not([data-stacked]) > .settings-row-feedback {
   flex-basis: 100%;
 }
+/* An in-place confirmation widens when it opens. Where the row has room it grows sideways
+   (the label gives way) instead of wrapping under its siblings and pushing the row taller. */
+@container settings-row (inline-size >= 35rem) {
+  .settings-row:not([data-stacked]) > .settings-row-control:has(> .bycoda-arc-confirm) {
+    flex-wrap: nowrap;
+    max-inline-size: none;
+  }
+}
 @container settings-row (inline-size < 35rem) {
   .settings-row:not([data-stacked]) > .settings-row-control {
     inline-size: max-content;

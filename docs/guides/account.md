@@ -54,10 +54,10 @@ out the next time it connects. Signing out this computer from here also signs it
 
 ### Let phones find this computer
 
-In Settings → Machines → Phone, **Let my signed-in phones find this computer**
+In Settings → Machines → Phone, **Let my signed-in devices find this computer**
 (off by default) stores this computer's name, its Host environment id and its phone route
-addresses (a private local-network address with its public key, and a Tailscale address with its public key; only when you allow phones over the public internet, also public tunnel addresses, flagged as public) in
-your account so your signed-in phones can ask to connect. These are new stored data: route
+addresses (a private local-network address with its public key, and a Tailscale address with its public key; while a Host tunnel runs, also its public address, which your other computers pair over and which is flagged as public for phones only when you allow phones over the public internet) in
+your account so your signed-in phones and computers can ask to connect. These are new stored data: route
 hints only, never sessions, prompts, code or credentials. The entry is removed when you turn the
 switch off or remove the device, and every connection still needs your approval on the computer
 ([details](mobile-connections.md)).

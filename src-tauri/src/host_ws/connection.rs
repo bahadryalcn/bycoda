@@ -1440,8 +1440,9 @@ async fn serve(
                         if let Err(failure) = complete_result(shared, contracts, generation, request, value,Some(held)) { break failure; }
                     },
                     Err(category) => {
+                        let method = request.method.clone();
                         settle(request, generation, true, "RPC_WS_BULK", "Authenticated Host bulk result could not be verified or completed");
-                        if matches!(category, "schema" | "identity") { break (category, true); }
+                        if matches!(category, "schema" | "identity") { cause = format!("bulk result {method}"); break (category, true); }
                     }
                 }
             },
@@ -1492,14 +1493,15 @@ async fn serve(
                     Some(Ok(Message::Text(text))) => {
                         let Ok(value) = serde_json::from_str::<Value>(&text) else { cause = format!("invalid json bytes={}", text.len()); break ("schema", true); };
                         if value.get("method").is_some() {
-                            if !contracts.event.is_valid(&value) { break ("schema", true); }
-                            if let Err(failure) = subscriptions.event(shared, contracts, generation, &value) { break failure; }
+                            let event = || value["method"].as_str().unwrap_or("-").chars().take(80).collect::<String>();
+                            if !contracts.event.is_valid(&value) { cause = format!("invalid event {} bytes={}", event(), text.len()); break ("schema", true); }
+                            if let Err(failure) = subscriptions.event(shared, contracts, generation, &value) { cause = format!("subscription event {}", event()); break failure; }
                             continue;
                         }
                         if !contracts.response.is_valid(&value) { cause = format!("invalid response bytes={}", text.len()); break ("schema", true); }
-                        let Some(id) = value["id"].as_str() else { break ("schema", true); };
+                        let Some(id) = value["id"].as_str() else { cause = "response without id".into(); break ("schema", true); };
                         match subscriptions.response(shared, contracts, generation, id, &value) {
-                            Ok(true) => continue, Ok(false) => {}, Err(failure) => break failure,
+                            Ok(true) => continue, Ok(false) => {}, Err(failure) => { cause = "subscription response".into(); break failure; },
                         }
                         let Some(mut request) = pending.remove(id) else {
                             if let Some(subscription) = subscriptions.retired_opens.remove(id) {
@@ -1525,19 +1527,23 @@ async fn serve(
                             else if delivery == Some("not-sent") { error.uncertain = false; }
                             if let Some(command_id) = value["error"]["data"]["commandId"].as_str() {
                                 if request.command_id.as_deref().is_some_and(|original| original != command_id) {
+                                    cause = format!("command identity changed {}", request.method);
                                     settle(request, generation, true, "RPC_WS_SCHEMA", "Host error changed the durable command identity");
                                     break ("schema", true);
                                 }
                                 error.command_id = Some(command_id.into());
                             }
+                            let method = request.method.clone();
                             deliver(request, Err(error));
                             if matches!(category, "authentication" | "identity" | "schema") {
+                                cause = format!("host error {category} {method}");
                                 break (match category {"authentication"=>"authentication","identity"=>"identity",_=>"schema"}, true);
                             }
                             continue;
                         }
                         match bulk::reference(contracts, &value["result"]) {
                             Err(()) => {
+                                cause = format!("bulk reference {}", request.method);
                                 settle(request, generation, true, "RPC_WS_SCHEMA", "Host bulk result reference is invalid"); break ("schema", true);
                             },
                             Ok(Some(descriptor)) => {
@@ -1546,8 +1552,9 @@ async fn serve(
                                 let disclosure=match shared.permits.unary(contracts,&request.consumer,generation,&request.id,&descriptor,request.resource_scope.clone()) {
                                     Ok(grant)=>grant,
                                     Err(category)=>{
+                                        let method = request.method.clone();
                                         settle(request,generation,true,"RPC_WS_BULK_GRANT","Host bulk reference could not be admitted for its native request");
-                                        if matches!(category,"schema"|"identity") {break (category,true);}
+                                        if matches!(category,"schema"|"identity") {cause = format!("bulk grant {method}"); break (category,true);}
                                         continue;
                                     },
                                 };

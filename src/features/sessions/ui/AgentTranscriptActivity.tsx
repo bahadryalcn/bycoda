@@ -539,7 +539,7 @@ function PhaseStep({
   );
 }
 
-export { agentStepBlock } from "./agentStepBlocks";
+export { agentStepBlock } from "../model/agentStepBlocks";
 
 /** Whether the line that titled a group has more in it than the header shows. */
 function headlineHasMore(block?: Block): boolean {

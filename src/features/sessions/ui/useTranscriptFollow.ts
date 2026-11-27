@@ -525,7 +525,7 @@ export function useTranscriptFollow({
     };
   }, [rememberScroll, scrollerEl, setShowJump, visible]);
 
-  useTurnScrollAnchor(scrollerEl, visible, stickToBottom, rememberScroll);
+  useTurnScrollAnchor(scrollerEl, visible, stickToBottom, rememberScroll, virtualization);
 
   return {
     scroller,

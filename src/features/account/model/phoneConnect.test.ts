@@ -83,6 +83,42 @@ describe("buildConnectInfo", () => {
     expect(info?.routes).toEqual([{ endpoint: "https://pc.tail.ts.net" }]);
     expect(info?.hostName).toBe("Desk");
   });
+  it("publishes the Host tunnel for other computers, in a reserved last slot", () => {
+    const keyed = (index: number) => ({
+      endpoint: `http://192.168.1.${index}:3777`,
+      lanKey: "a".repeat(64),
+    });
+    const tunnelRoute = "https://desk.trycloudflare.com";
+    // Phones are not allowed over the tunnel, so it is absent from `mobileRoutes`.
+    expect(buildConnectInfo({ ...host([keyed(1)]), tunnelRoute })?.routes).toEqual([
+      keyed(1),
+      { endpoint: tunnelRoute },
+    ]);
+    expect(
+      buildConnectInfo({
+        ...host([keyed(1), keyed(2), keyed(3), keyed(4)]),
+        tunnelRoute,
+      })?.routes,
+    ).toEqual([keyed(1), keyed(2), keyed(3), { endpoint: tunnelRoute }]);
+    // Allowed for phones too: one entry, and it keeps its public flag.
+    expect(
+      buildConnectInfo({ ...host([{ endpoint: tunnelRoute, public: true }]), tunnelRoute })?.routes,
+    ).toEqual([{ endpoint: tunnelRoute, public: true }]);
+    expect(
+      buildConnectInfo({ ...host([keyed(1)]), tunnelRoute: "http://desk.example" })?.routes,
+    ).toEqual([keyed(1)]);
+    // The slot is reserved for a tunnel phones may use too, behind four private routes.
+    expect(
+      buildConnectInfo({
+        ...host([keyed(1), keyed(2), keyed(3), keyed(4), { endpoint: tunnelRoute, public: true }]),
+        tunnelRoute,
+      })?.routes,
+    ).toEqual([keyed(1), keyed(2), keyed(3), { endpoint: tunnelRoute, public: true }]);
+    // A tunnel origin the contract rejects is dropped; the other routes are still published.
+    expect(
+      buildConnectInfo({ ...host([keyed(1)]), tunnelRoute: `https://${"a".repeat(3000)}` })?.routes,
+    ).toEqual([keyed(1)]);
+  });
 });
 
 describe("phone connect publisher", () => {

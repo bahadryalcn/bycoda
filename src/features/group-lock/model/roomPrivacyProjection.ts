@@ -27,8 +27,8 @@ let mutationTail: Promise<void> = Promise.resolve();
 let queuedMutations = 0;
 /** Waits between automatic retries of a Host busy failure: 1s to 16s. */
 const TRANSIENT_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
-/** Host capacity pushback only; a deadline or a Host-side unknown failure stays held for an
- * explicit retry. */
+/** Host capacity pushback only; a deadline after dispatch or a Host-side unknown failure stays
+ * held for an explicit retry. */
 const HOST_BUSY =
   /RPC_WS_OVERLOAD|Host read capacity is busy|Host pending (read request|control queue) limit reached/;
 /** Whether a held failure is Host capacity pushback rather than a privacy defect. */
@@ -38,9 +38,14 @@ export function isRoomPrivacyHostBusy(error: unknown): boolean {
 /** The native Host connection stalled or was replaced before a result arrived. Native commands
  * are idempotent per operation ID, so replaying the same operation is the receipt reconciliation. */
 const NATIVE_RESULT_LOST = /RPC_WS_INTERRUPTED/;
+/** The native connection settled the request unsent, for example while the Host restarted for an
+ * update, so nothing reached the Host and replaying the same operation is safe. */
+const NATIVE_NOT_SENT =
+  /RPC_WS_(DEADLINE: Host request deadline|UNAVAILABLE: Host connection is unavailable) [^\n]*before dispatch/;
 /** Failures the drain retries on its own under the original operation identity. */
 function isReconcilable(error: unknown): boolean {
-  return isRoomPrivacyHostBusy(error) || NATIVE_RESULT_LOST.test(errorText(error));
+  const text = errorText(error);
+  return isRoomPrivacyHostBusy(error) || NATIVE_RESULT_LOST.test(text) || NATIVE_NOT_SENT.test(text);
 }
 let wakeBackoff: (() => void) | null = null;
 let ready = false;

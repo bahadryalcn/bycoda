@@ -89,12 +89,12 @@ async function owningMachine(context: WorkspaceContext): Promise<RemoteMachine> 
   return machine;
 }
 
-/** Resolve on the execution host. A path is never substituted for a project ID. */
 /** Managed workspaces belong to a project: a projectless chat (`~` here or on a machine) has none. */
 export function hasWorkspaceProject(cwd: string): boolean {
   return !!cwd.trim() && cwd !== "~" && !projectlessMachineSession(cwd);
 }
 
+/** Resolve on the execution host. A path is never substituted for a project ID. */
 export async function resolveWorkspaceContext(cwd: string) {
   if (!hasWorkspaceProject(cwd)) throw new WorkspaceProjectRequiredError();
   const machine = await owningMachine({ cwd });

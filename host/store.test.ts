@@ -1752,6 +1752,123 @@ describe("HostStore device credentials", () => {
       await store.close();
     }
   });
+  it("replaces only the credential bound to the proven earlier key when a device pairs again", async () => {
+    const directory = open();
+    const store = new HostStore(join(directory, "host.db"));
+    cleanups.push(async () => await store.close());
+    const key = (jkt: string) => ({ jkt, x: `${jkt}-x` });
+    const owner = await store.issueDevice("Desktop", "desktop", true, key("phone-key-1"));
+    const earlier = await store.issueDevice("Bycoda phone", "phone", false, key("phone-key-1"));
+    const otherPhone = await store.issueDevice("Bycoda phone", "phone", false, key("other-key"));
+    const otherKind = await store.issueDevice("Laptop", "desktop", false, key("phone-key-1"));
+    const replace = (jkt: string) =>
+      store.issueDevice("Bycoda phone", "phone", false, key(jkt), { jkt: "phone-key-1" });
+    const listed = async () =>
+      (await store.pairedDevices(owner.token)).devices.map((device) => device.id);
+    // A replacement the phone never received (lost response, failed connection) retires nothing
+    // and is not listed as a second phone; to itself it is listed.
+    const lost = await replace("phone-key-2");
+    expect((await store.deviceAuthority(lost.token))?.replacementPending).toBe(true);
+    expect(await store.authenticated(earlier.token)).toBe(true);
+    expect(await listed()).toContain(earlier.id);
+    expect(await listed()).not.toContain(lost.id);
+    expect((await store.pairedDevices(lost.token)).devices[0]).toMatchObject({
+      id: lost.id,
+      isCurrent: true,
+    });
+    // The phone pairs once more with the key it still holds and uses that credential.
+    const replacement = await replace("phone-key-3");
+    expect(await store.authenticated(earlier.token)).toBe(true);
+    expect(await store.completeDeviceReplacement(replacement.token)).toBe(true);
+    expect(await store.authenticated(earlier.token)).toBe(false);
+    expect(await store.authenticated(lost.token)).toBe(false);
+    // Same name, different key: another phone. Same key, another kind or the local desktop:
+    // never retired here.
+    expect(await store.authenticated(otherPhone.token)).toBe(true);
+    expect(await store.authenticated(otherKind.token)).toBe(true);
+    expect(await store.authenticated(owner.token)).toBe(true);
+    expect(await store.authenticated(replacement.token)).toBe(true);
+    expect(await listed()).toEqual(expect.not.arrayContaining([earlier.id, lost.id]));
+    expect(await listed()).toContain(replacement.id);
+    // Done once: later requests of the same credential and ordinary credentials change nothing.
+    expect((await store.deviceAuthority(replacement.token))?.replacementPending).toBeUndefined();
+    expect(await store.completeDeviceReplacement(replacement.token)).toBe(false);
+    expect(await store.completeDeviceReplacement(otherPhone.token)).toBe(false);
+    // A credential never names its own key as the one to retire.
+    const same = await store.issueDevice("Bycoda phone", "phone", false, key("k"), { jkt: "k" });
+    expect(await store.completeDeviceReplacement(same.token)).toBe(false);
+    // A proven key with no credential left behind it (the owner revoked it) replaces nothing, so
+    // the new credential is listed at once.
+    const fresh = await store.issueDevice("Bycoda phone", "phone", false, key("k2"), {
+      jkt: "gone-key",
+    });
+    expect((await store.deviceAuthority(fresh.token))?.replacementPending).toBeUndefined();
+    expect(await listed()).toContain(fresh.id);
+    // The phone saved a replacement but pairs again before using it: the next one inherits the
+    // original target, so the whole chain is retired together.
+    const second = await store.issueDevice("Bycoda phone", "phone", false, key("phone-key-4"), {
+      jkt: "phone-key-3",
+    });
+    const third = await store.issueDevice("Bycoda phone", "phone", false, key("phone-key-5"), {
+      jkt: "phone-key-4",
+    });
+    expect(await store.completeDeviceReplacement(third.token)).toBe(true);
+    expect(await store.authenticated(replacement.token)).toBe(false);
+    expect(await store.authenticated(second.token)).toBe(false);
+    // Revoking the listed credential revokes its unlisted, unconfirmed replacement with it.
+    const hidden = await store.issueDevice("Bycoda phone", "phone", false, key("phone-key-6"), {
+      jkt: "phone-key-5",
+    });
+    expect(await store.revokeOtherDevice(third.id, owner.token)).toBe(true);
+    expect(await store.authenticated(hidden.token)).toBe(false);
+    expect(await store.authenticated(otherPhone.token)).toBe(true);
+  });
+  it("drops a hidden replacement left behind by a revoke interrupted before its sweep", async () => {
+    const path = join(open(), "host.db");
+    const key = (jkt: string) => ({ jkt, x: `${jkt}-x` });
+    const first = new HostStore(path);
+    const earlier = await first.issueDevice("Bycoda phone", "phone", false, key("old-key"));
+    const hidden = await first.issueDevice("Bycoda phone", "phone", false, key("new-key"), {
+      jkt: "old-key",
+    });
+    await first.close();
+    // The revoke's first statement ran, the sweep did not.
+    const raw = new DatabaseSync(path);
+    raw.prepare("DELETE FROM devices WHERE id=?").run(earlier.id);
+    raw.close();
+    const reopened = new HostStore(path);
+    cleanups.push(() => reopened.close());
+    expect(await reopened.authenticated(hidden.token)).toBe(false);
+  });
+  it("replaces a reinstalled phone's credential by install ID, for phones only and after use", async () => {
+    const directory = open();
+    const store = new HostStore(join(directory, "host.db"));
+    cleanups.push(async () => await store.close());
+    const key = (jkt: string) => ({ jkt, x: `${jkt}-x` });
+    const phone = (jkt: string, installId?: string) =>
+      store.issueDevice("Bycoda phone", "phone", false, key(jkt), installId ? { installId } : {});
+    const owner = await store.issueDevice("Desktop", "desktop", true, key("owner-key"));
+    const first = await phone("key-1", "install-a");
+    const otherInstall = await phone("key-2", "install-b");
+    const noInstall = await phone("key-3");
+    // A desktop never carries an install ID, so one can neither retire nor be retired by it.
+    const desktop = await store.issueDevice("Laptop", "desktop", false, key("key-4"), {
+      installId: "install-a",
+    });
+    expect((await store.deviceAuthority(first.token))?.replacementPending).toBeUndefined();
+    expect((await store.deviceAuthority(desktop.token))?.replacementPending).toBeUndefined();
+    // The reinstalled phone has a new key and no proof of the earlier one.
+    const reinstalled = await phone("key-5", "install-a");
+    expect((await store.deviceAuthority(reinstalled.token))?.replacementPending).toBe(true);
+    expect(await store.authenticated(first.token)).toBe(true);
+    expect(
+      (await store.pairedDevices(owner.token)).devices.map((device) => device.id),
+    ).not.toContain(reinstalled.id);
+    expect(await store.completeDeviceReplacement(reinstalled.token)).toBe(true);
+    expect(await store.authenticated(first.token)).toBe(false);
+    for (const kept of [reinstalled, otherInstall, noInstall, desktop, owner])
+      expect(await store.authenticated(kept.token)).toBe(true);
+  });
   it("drops a remembered credential the moment it is revoked", async () => {
     const directory = open();
     const store = new HostStore(join(directory, "host.db"));

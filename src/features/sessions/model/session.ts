@@ -264,6 +264,8 @@ export type AgentRunMeta = {
   endedAt?: number;
   /** Delegated child only: which round of the conversation this run shows; set from round 2. */
   round?: number;
+  /** A delegated ask that failed before any child session existed: no run, only its reason. */
+  unstarted?: boolean;
 };
 
 export type AttachmentKind = "image" | "audio" | "file";

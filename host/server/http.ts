@@ -19,6 +19,7 @@ import { requestingDeviceName } from "../desktop/remoteActivity";
 import { memoized } from "../desktop/requester-name";
 import {
   checkDeviceProof,
+  completeProvenReplacement,
   DEVICE_PROOF_REFUSAL_HEADERS,
   deviceProofRefusalBody,
 } from "../security/device-proof";
@@ -369,6 +370,9 @@ export function createHttpRuntime(
               .end(deviceProofRefusalBody(proof.reason));
             return;
           }
+          await completeProvenReplacement(deviceAuthority, proof, () =>
+            dependencies.engine.store.completeDeviceReplacement(credential),
+          );
         }
         let token: string = credential;
         let tokenIdentity = dependencies.httpTokenHashes.get(request.socket);
