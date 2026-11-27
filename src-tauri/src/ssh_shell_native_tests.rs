@@ -289,6 +289,32 @@ fn exact_production_bootstrap_runs_in_native_conpty_without_filesystem_rc() {
     harness.wait("ready");
     harness.send("history -s 'clear token-hidden'\r");
     harness.wait("ready");
+    // The prompt itself issued its candidates, so typing needs no request chord.
+    let catalog = harness.wait("catalog");
+    assert_eq!(catalog.catalog, Some("history"));
+    let history = catalog.suggestions.unwrap();
+    assert_eq!(&history[..2], &["clear screen-new", "clear screen-old"]);
+    assert!(!history.iter().any(|value| value.contains("token")));
+    harness.send("clear scr");
+    let paste = harness
+        .shell
+        .lock()
+        .unwrap()
+        .accept_catalog("clear scr", "clear screen-new")
+        .unwrap();
+    harness
+        .writer
+        .lock()
+        .unwrap()
+        .write_all(paste.as_bytes())
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(
+        harness.shell.lock().unwrap().ready,
+        "catalog insertion must not execute"
+    );
+    harness.send("\x03");
+    harness.wait("ready");
     harness.send("cl");
     let request = harness.request_source("commands");
     let event = harness.wait("suggestions");

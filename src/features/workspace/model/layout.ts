@@ -436,6 +436,52 @@ export function updateTerminalTab(
   return withSurfacePanes(tab, "terminal", terminalPanes);
 }
 
+/**
+ * A new terminal in `file`'s project folder to take its place once its own folder stopped being a
+ * workspace. `null` when there is no other folder to fall back to, so a refusal never loops.
+ */
+export function projectTerminalReplacement(
+  file: FilePaneTab,
+  siblings: Iterable<FilePaneTab>,
+  projectCwd = file.projectCwd,
+): FilePaneTab | null {
+  if (!file.terminal || !projectCwd || projectCwd === file.cwd) return null;
+  const others = [...siblings].filter((entry) => entry.id !== file.id);
+  return newTerminalFile(
+    projectCwd,
+    nextTerminalTitleFromFiles(others, projectCwd),
+    undefined,
+    file.shellProfile,
+  );
+}
+
+/** `fileId` swapped for `next` in place, keeping its position and selection. */
+export function replacePaneFile(pane: EditorPane, fileId: string, next: FilePaneTab): EditorPane {
+  return {
+    ...pane,
+    files: pane.files.map((file) => (file.id === fileId ? next : file)),
+    activeFileId: pane.activeFileId === fileId ? next.id : pane.activeFileId,
+  };
+}
+
+/** Replaces a terminal whose folder is gone with a new one in its project folder. */
+export function restartTerminalTabInProject(tab: WorkspaceTab, fileId: string): WorkspaceTab {
+  const panes = tab.terminalPanes ?? [];
+  const pane = panes.find((entry) => entry.files.some((file) => file.id === fileId));
+  const file = pane?.files.find((entry) => entry.id === fileId);
+  if (!pane || !file) return tab;
+  const next = projectTerminalReplacement(
+    file,
+    panes.flatMap((entry) => entry.files),
+  );
+  if (!next) return tab;
+  return withSurfacePanes(
+    tab,
+    "terminal",
+    panes.map((entry) => (entry === pane ? replacePaneFile(entry, fileId, next) : entry)),
+  );
+}
+
 export function surfacePanes(tab: WorkspaceTab, kind: SurfaceKind): EditorPane[] {
   return kind === "editor" ? tab.editorPanes : (tab.terminalPanes ?? []);
 }

@@ -262,3 +262,45 @@ export async function signDesktopHelperBundle(
     throw new Error("The signed desktop helper changed before packaging.");
   return signed;
 }
+
+/**
+ * Sign one standalone executable (the bundled bykit CLI) with the same macOS identity or
+ * Windows certificate as the desktop helper. Returns the verified receipt.
+ */
+export async function signStandaloneExecutable(
+  binaryPath,
+  {
+    platform = process.platform,
+    identity,
+    identifier,
+    certificateThumbprint,
+    storeLocation = "CurrentUser",
+    entitlements,
+    signer,
+  } = {},
+) {
+  const expectedSha256 = sha256(await readFile(binaryPath));
+  if (platform === "darwin") {
+    if (typeof identity !== "string" || !identity.trim())
+      throw new Error("Configure BYCODA_MACOS_SIGNING_IDENTITY (or APPLE_SIGNING_IDENTITY).");
+    return (signer ?? signMacosNative)({
+      binaryPath,
+      expectedSha256,
+      identity,
+      identifier: identifier ?? `${MACOS_HELPER_IDENTIFIER_PREFIX}.bykit`,
+      entitlements,
+    });
+  }
+  if (platform !== "win32") throw new Error("Signing requires Windows or macOS.");
+  if (typeof certificateThumbprint !== "string" || !/^[a-fA-F0-9]{40}$/.test(certificateThumbprint))
+    throw new Error("Configure BYCODA_WINDOWS_SIGNING_CERT_SHA1 with the exact thumbprint.");
+  const receipt = (signer ?? signNative)({
+    binaryPath,
+    expectedSha256,
+    certificateThumbprint: certificateThumbprint.toUpperCase(),
+    storeLocation,
+  });
+  if (receipt?.status !== "Valid" || receipt.timestamped !== true)
+    throw new Error("The bykit binary lacks a verified, timestamped Authenticode signature.");
+  return receipt;
+}

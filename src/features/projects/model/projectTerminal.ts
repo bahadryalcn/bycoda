@@ -2,6 +2,8 @@ import type { CSSProperties } from "react";
 import {
   newEditorPane,
   nextTerminalTitleFromFiles,
+  projectTerminalReplacement,
+  replacePaneFile,
   type EditorPane,
   type FilePaneTab,
   type WorkspaceTab,
@@ -29,6 +31,8 @@ export type ProjectTerminalDock = {
     string,
     { connectionId: string; project: { environmentId: string; cwd: string } }
   >;
+  /** Window-owned shells the remote project's Host runs, for machines without saved SSH. */
+  hostShells?: Record<string, { projectCwd: string }>;
 };
 
 export function dockTerminalGroup(dock: ProjectTerminalDock, fileId: string): string[] {
@@ -140,6 +144,8 @@ export function closeTerminalInDock(
   if (remoteRuns) delete remoteRuns[fileId];
   const sshShells = dock.sshShells ? { ...dock.sshShells } : undefined;
   if (sshShells) delete sshShells[fileId];
+  const hostShells = dock.hostShells ? { ...dock.hostShells } : undefined;
+  if (hostShells) delete hostShells[fileId];
   const activeFileId =
     dock.pane.activeFileId === fileId
       ? (dockTerminalGroup(dock, fileId).find((id) => id !== fileId) ??
@@ -149,6 +155,7 @@ export function closeTerminalInDock(
     ...dock,
     remoteRuns,
     sshShells,
+    hostShells,
     pane: { ...dock.pane, files, activeFileId },
     splitGroups: dock.splitGroups
       ?.map((group) => group.filter((id) => id !== fileId))
@@ -184,6 +191,36 @@ export function patchDockTerminal(
   });
   if (!changed) return dock;
   return { ...dock, pane: { ...dock.pane, files } };
+}
+
+/**
+ * Replaces a dock terminal whose folder is no longer a workspace with a new one in the project
+ * folder, in the same place. SSH shells and Host runs have no local folder and are left alone.
+ */
+export function restartDockTerminalInProject(
+  dock: ProjectTerminalDock,
+  fileId: string,
+): ProjectTerminalDock {
+  const file = dock.pane.files.find((entry) => entry.id === fileId);
+  if (!file || dock.sshShells?.[fileId] || dock.hostShells?.[fileId] || dock.remoteRuns?.[fileId])
+    return dock;
+  const next = projectTerminalReplacement(
+    file,
+    dock.pane.files,
+    file.projectCwd ?? dock.projectPath,
+  );
+  if (!next) return dock;
+  return {
+    ...dock,
+    pane: replacePaneFile(dock.pane, fileId, next),
+    ...(dock.splitGroups
+      ? {
+          splitGroups: dock.splitGroups.map((ids) =>
+            ids.map((id) => (id === fileId ? next.id : id)),
+          ),
+        }
+      : {}),
+  };
 }
 
 export function patchProjectTerminals(
@@ -318,7 +355,7 @@ export function splitProjectTerminalsForMove(
     const path = normalizeProjectPath(dock.projectPath);
     const stays = remainingProjects.has(path);
     const follows = movingProjects.has(path) && !stays;
-    if (follows && !dock.remoteRuns && !dock.sshShells) moving.push(dock);
+    if (follows && !dock.remoteRuns && !dock.sshShells && !dock.hostShells) moving.push(dock);
     else remaining.push(dock);
   }
   return { moving, remaining };

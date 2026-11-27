@@ -3,7 +3,6 @@ import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { ComponentProps } from "react";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import { canOpenTerminalIn } from "../../../features/projects/model/recents";
-import { parseRemotePath } from "../../../features/connections/public/remoteProjects";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ApprovalToasts } from "../../../features/sessions/ui/ApprovalToasts";
 import { SessionProjectIcon } from "../../shell/useSessionProjectAppearance";
@@ -132,11 +131,9 @@ function WorkspaceFooterComponent({
           terminalUnavailableReason={
             currentProjectDock || remoteTerminalAvailable || canOpenTerminalIn(projectCwd)
               ? undefined
-              : parseRemotePath(projectCwd)
-                ? t("Set up an SSH connection to this project's machine to open a terminal.")
-                : t(
-                    "The terminal panel is available for local folders. Open this project on its machine to use it.",
-                  )
+              : t(
+                  "The terminal panel is available for local folders. Open this project on its machine to use it.",
+                )
           }
           projectTerminalActive={!!currentProjectDock && currentProjectDock.pane.files.length > 0}
           projectTerminalVisible={dockVisible}

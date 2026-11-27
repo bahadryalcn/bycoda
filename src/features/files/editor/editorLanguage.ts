@@ -273,5 +273,101 @@ export async function languageForPath(path: string): Promise<Extension | null> {
     const { dockerFile } = await import("@codemirror/legacy-modes/mode/dockerfile");
     return legacyLanguage(dockerFile);
   }
+  if (isDotenvName(name, extension)) {
+    return legacyLanguage(dotenv as StreamParser<unknown>);
+  }
   return null;
 }
+
+/** `.env`, `.env.local`, `.env.production`, `app.env`, … */
+function isDotenvName(name: string, extension: string): boolean {
+  return name === ".env" || name.startsWith(".env.") || extension === ".env";
+}
+
+type DotenvState = {
+  /** `key` until the first `=`/`:` of a line, then `value`, then `after` a closed quote. */
+  position: "key" | "value" | "after";
+  /** Open quote character while a quoted value continues, possibly across lines. */
+  quote: string | null;
+};
+
+const DOTENV_INTERPOLATION = /^\$\{[^}\s]*\}|^\$[A-Za-z_][A-Za-z0-9_]*/;
+
+function readDotenvQuoted(
+  stream: Parameters<StreamParser<DotenvState>["token"]>[0],
+  state: DotenvState,
+): string {
+  const quote = state.quote!;
+  const start = stream.pos;
+  while (!stream.eol()) {
+    if (quote !== "'" && stream.peek() === "$" && stream.match(DOTENV_INTERPOLATION, false)) {
+      if (stream.pos > start) return "string";
+      stream.match(DOTENV_INTERPOLATION);
+      return "meta";
+    }
+    const char = stream.next();
+    if (char === "\\" && quote !== "'") {
+      stream.next();
+      continue;
+    }
+    if (char === quote) {
+      state.quote = null;
+      state.position = "after";
+      return "string";
+    }
+  }
+  return "string";
+}
+
+/** Highlights dotenv files as `KEY = value # comment`, with quoted and interpolated values. */
+const dotenv: StreamParser<DotenvState> = {
+  name: "dotenv",
+  startState: () => ({ position: "key", quote: null }),
+  copyState: (state) => ({ ...state }),
+  token(stream, state) {
+    if (state.quote) return readDotenvQuoted(stream, state);
+    if (stream.sol()) state.position = "key";
+    if (stream.eatSpace()) return null;
+
+    const atComment =
+      stream.peek() === "#" && (stream.pos === 0 || /\s/.test(stream.string[stream.pos - 1]!));
+    if (state.position === "key") {
+      if (stream.peek() === "#") {
+        stream.skipToEnd();
+        return "comment";
+      }
+      if (stream.match(/^export(?=\s)/)) return "keyword";
+      if (stream.match(/^[A-Za-z_][\w.-]*/)) return "propertyName";
+      if (stream.eat(/[=:]/)) {
+        state.position = "value";
+        return "operator";
+      }
+      stream.next();
+      return null;
+    }
+    if (atComment) {
+      stream.skipToEnd();
+      return "comment";
+    }
+    if (state.position === "after") {
+      stream.next();
+      return null;
+    }
+    const char = stream.peek();
+    if (char === '"' || char === "'" || char === "`") {
+      stream.next();
+      state.quote = char;
+      return readDotenvQuoted(stream, state);
+    }
+    if (stream.match(DOTENV_INTERPOLATION)) return "meta";
+    const word = stream.match(/^[^\s$]+/) as RegExpMatchArray | null;
+    if (!word) {
+      stream.next();
+      return "string";
+    }
+    if (/^-?\d+(\.\d+)?$/.test(word[0])) return "number";
+    if (/^(true|false|yes|no|on|off|null)$/i.test(word[0])) return "bool";
+    return "string";
+  },
+  languageData: { commentTokens: { line: "#" } },
+};

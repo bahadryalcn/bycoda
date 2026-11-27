@@ -417,7 +417,7 @@ const checkoutTrees: Record<string, Worktree> = Object.fromEntries(
         "/fixture",
         "/trees/audit/very-long-worktree-folder-name",
         "/trees/detached",
-        // `?idle` adds a worktree with no work: only the header picker lists it.
+        // `?idle` adds a worktree with no work: its section starts collapsed.
         ...(new URLSearchParams(location.search).has("idle") ? ["/trees/clean-one"] : []),
       ]
   ).map((path, index) => [

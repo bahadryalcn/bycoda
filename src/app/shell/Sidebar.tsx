@@ -89,7 +89,6 @@ import { confirmSessionDelete } from "../../features/sessions/model/confirmSessi
 import { SessionDeletionNotice } from "../../features/sessions/ui/SessionDeletionNotice";
 import {
   type WorktreeFocus,
-  inWorktreeFocus,
   useWorktreeFocus,
 } from "../../features/source-control/model/worktreeFocus";
 import { SidebarWorkspaceSwitcher } from "./SidebarWorkspaceSwitcher";
@@ -1043,6 +1042,31 @@ function SidebarComponent({
         />
       </>
     ) : null;
+  // The collapsed rail overlays the count on an icon, so it drops the spinner and uses the
+  // solid accent pill to stay legible and clear of the glyph.
+  const workingSessionsRailBadge =
+    workingSessionCount > 0 ? (
+      <>
+        <Badge
+          variant="count"
+          size="xs"
+          tone="accent"
+          solid
+          aria-hidden="true"
+          data-workspace-working-count
+        >
+          {workingSessionCount}
+        </Badge>
+        <LiveText
+          className="sr-only"
+          text={
+            workingSessionCount === 1
+              ? t("{p0} working session", { p0: workingSessionCount })
+              : t("{p0} working sessions", { p0: workingSessionCount })
+          }
+        />
+      </>
+    ) : null;
   const remoteExecutionCwd =
     remote.sessions.find((session) => session.id === activeRemoteId)?.cwd ??
     (activeSessionId ? remoteBindings.pendingWorktree(activeSessionId) : undefined) ??
@@ -1531,8 +1555,8 @@ function SidebarComponent({
     ).filter(
       (session) =>
         !session.orchestrationLeadId &&
-        !(crewManaged.cwd === cwd && crewManaged.ids.has(session.id)) &&
-        inWorktreeFocus(session, focusedWorktree),
+        // The header's worktree choice scopes Changes only; every session stays listed.
+        !(crewManaged.cwd === cwd && crewManaged.ids.has(session.id)),
     );
     if (!pinPreview.size) return rows;
     return rows.map((session) => {
@@ -1548,7 +1572,6 @@ function SidebarComponent({
     sessionFolders,
     crewManaged,
     cwd,
-    focusedWorktree,
     pinPreview,
   ]);
   // oxlint-disable-next-line bycoda/compiler-owns-memo -- the sidebar cannot compile its lock reads; retain membership and recency while the search text changes
@@ -3899,7 +3922,7 @@ function SidebarComponent({
     <div
       data-session-selection-keep
       data-session-tools=""
-      className="ms-auto flex min-w-fit flex-1 items-center justify-end gap-0.5"
+      className="ms-auto flex min-w-fit flex-1 items-center justify-end"
       data-tauri-drag-region="false"
     >
       <div
@@ -5264,7 +5287,7 @@ function SidebarComponent({
           onPreviewSession={onPreviewSession}
           recoveryControl={recoveryControl}
           cwd={cwd}
-          workingSessionsBadge={workingSessionsBadge}
+          workingSessionsBadge={workingSessionsRailBadge}
           recents={visibleRecents}
           tabShown={open}
           inboxUnseen={inboxUnseen}
@@ -6042,7 +6065,9 @@ function CompactRailAction({
     <>
       {dot ? <StatusDot label={label} aria-hidden className="absolute right-1 top-1" /> : null}
       {badge ? (
-        <span className="pointer-events-none absolute -right-1 -top-1 [&>span]:ml-0">{badge}</span>
+        <span className="pointer-events-none absolute -right-1.5 -top-1.5 [&>span]:ml-0">
+          {badge}
+        </span>
       ) : null}
     </>
   );
@@ -7407,7 +7432,10 @@ const SessionCard = memo(function SessionCard({
               </span>
               {pinAction("col-start-1 row-start-1")}
             </span>
-            {hideProjectName ? null : (
+            {/* Without the name, an empty spacer keeps the commands and time at the end. */}
+            {hideProjectName ? (
+              <span className="flex-1" />
+            ) : (
               <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
                 <SessionSearchText text={project.name} />
               </Text>

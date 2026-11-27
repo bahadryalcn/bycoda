@@ -24,7 +24,10 @@ import { useT } from "../../../shared/i18n";
 import { useToast } from "../../../shared/ui/ToastRegion";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { reportFailure } from "../../../shared/ui/reportFailure";
-import { describeRemoteError } from "../../connections/public/remoteFailure";
+import {
+  describeRemoteError,
+  isWorkspaceNotRegisteredRefusal,
+} from "../../connections/public/remoteFailure";
 import { describeActionFailure, useGracedFailure } from "../../connections/public/transientFailure";
 import { loadSshSnippets } from "../../connections/model/sshSnippets";
 import { bindTerminalDomInput } from "../runtime/terminalDomInput";
@@ -63,6 +66,8 @@ type Props = {
   /** Canonical SSH-only connection. No local profile, cwd or launch replay. */
   sshConnectionId?: string;
   sshProject?: SshProjectTerminal;
+  /** Remote project whose Host runs this shell in `cwd`; used when its machine has no SSH. */
+  hostShellProject?: string;
   /** Quick connections remain ephemeral and use the same native SSH engine. */
   sshEndpoint?: SshEndpoint;
   shellIntegration?: "auto" | "bash" | "zsh" | "powershell";
@@ -132,6 +137,7 @@ export function TerminalView({
   profile,
   sshConnectionId,
   sshProject,
+  hostShellProject,
   sshEndpoint,
   shellIntegration,
   agentForwardingReviewId,
@@ -172,7 +178,9 @@ export function TerminalView({
     typographyRef.current = { fontSize, lineHeight };
     zoomSizeRef.current = null;
   }, [fontSize, lineHeight]);
-  const privateTerminal = Boolean(sshConnectionId || sshEndpoint || keyGenerationPath);
+  const privateTerminal = Boolean(
+    sshConnectionId || sshEndpoint || keyGenerationPath || hostShellProject,
+  );
   const integrated = Boolean(
     (shellIntegration === "auto" ||
       shellIntegration === "bash" ||
@@ -185,9 +193,6 @@ export function TerminalView({
     shellActions.current = actions;
   });
   const suspendShellSuggestions = useStableCallback(() => shellActions.current?.suspendAutomatic());
-  const isActive = useStableCallback(() => active);
-  const composingRef = useRef(false);
-  const editRevisionRef = useRef(0);
   const [snippets, setSnippets] = useState<{ initialCommand?: string } | null>(null);
   const toast = useToast();
   const alreadySaved = () => toast.show({ message: t("Command already saved."), tone: "info" });
@@ -201,7 +206,6 @@ export function TerminalView({
   // Same signal as the WebGL addon: the terminal is actually on screen. Without
   // IntersectionObserver there is no signal, so assume visible.
   const [onScreen, setOnScreen] = useState(typeof IntersectionObserver === "undefined");
-  const isOnScreen = useStableCallback(() => onScreen);
   const getProfile = useStableCallback(() => profile);
   const getCwd = useStableCallback(() => cwd);
   const outerRef = useRef<HTMLDivElement>(null);
@@ -305,6 +309,7 @@ export function TerminalView({
         agentForwardingReviewId,
         expectedConfigurationDigest,
         httpProxyTicketId,
+        hostShellProject,
         cwd,
         profile: () => getProfile(),
       }),
@@ -315,7 +320,6 @@ export function TerminalView({
       authorizeStart: authorizeStartRef,
       lifecycle: (state) => lifecycleRef.current?.(state),
       onExit: (code) => {
-        ++editRevisionRef.current;
         shellActions.current?.suspendAutomatic();
         setTool(null);
         setShellReady(false);
@@ -335,6 +339,10 @@ export function TerminalView({
         shellActions.current?.suspendAutomatic();
         setShellReady(false);
         if (attemptedLaunch) {
+          // A removed worktree can never admit this shell again: its owner opens a new terminal
+          // in the project folder in its place. The refusal stays shown until it does.
+          if (!privateTerminal && isWorkspaceNotRegisteredRefusal(error))
+            getOnMetaChange()?.({ restartInProject: true });
           const failure = describeActionFailure(error);
           if (failure.transient) setStartupError(error);
           else setStartupOutcome(failure.message);
@@ -356,13 +364,9 @@ export function TerminalView({
       term,
       host,
       onCompositionStart: () => {
-        ++editRevisionRef.current;
-        composingRef.current = true;
         shellActions.current?.suspendAutomatic();
       },
-      onCompositionEnd: () => {
-        composingRef.current = false;
-      },
+      onCompositionEnd: () => {},
     });
 
     resumeInputRef.current = () => {
@@ -375,30 +379,13 @@ export function TerminalView({
     const dataSub = term.onData((data) => {
       // A submitted command may start a foreground process: refresh the title soon.
       if (data.includes("\r")) setTimeout(() => metaPokeRef.current(), 400);
-      const revision = ++editRevisionRef.current;
-      const composingInput = composingRef.current;
-      // Do not inject a snapshot chord between native history/completion/search
-      // keystrokes. PSReadLine/Readline own those navigation groups.
-      const textEdit = isTerminalTextEdit(data);
+      // Typing never writes a suggestion chord into the shell: the passive list
+      // is filtered from the prompt-time catalog, so only that list updates.
       if (integrated) {
-        shellActions.current?.invalidate(textEdit);
+        shellActions.current?.invalidate(isTerminalTextEdit(data));
         if (getTool() === "remote") setTool(null);
       }
-      void pty.enqueueInput(data).then((written) => {
-        if (!written) return;
-        if (
-          integrated &&
-          textEdit &&
-          pty.live &&
-          revision === editRevisionRef.current &&
-          isActive() &&
-          isOnScreen() &&
-          !composingInput &&
-          !composingRef.current &&
-          term.buffer.active.type !== "alternate"
-        )
-          shellActions.current?.notifyInput();
-      });
+      void pty.enqueueInput(data);
     });
 
     // xterm already decodes the stream, so cwd reports come from its parser
@@ -447,7 +434,6 @@ export function TerminalView({
       resize: (cols, rows) => pty.resize(cols, rows),
       isSpawned: () => pty.spawned,
       onEnterAlternateScreen: () => {
-        ++editRevisionRef.current;
         shellActions.current?.suspendAutomatic();
       },
     });
@@ -496,6 +482,7 @@ export function TerminalView({
     id,
     sshConnectionId,
     sshProject,
+    hostShellProject,
     sshEndpoint,
     shellIntegration,
     agentForwardingReviewId,
@@ -506,8 +493,6 @@ export function TerminalView({
     privateTerminal,
     getTool,
     suspendShellSuggestions,
-    isActive,
-    isOnScreen,
     getProfile,
     getCwd,
     getOnMetaChange,
@@ -515,7 +500,6 @@ export function TerminalView({
 
   useEffect(() => {
     if (!active || !onScreen) {
-      ++editRevisionRef.current;
       shellActions.current?.suspendAutomatic();
     }
   }, [active, onScreen]);

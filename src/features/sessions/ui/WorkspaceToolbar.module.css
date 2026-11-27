@@ -2,11 +2,13 @@
 .inline {
   display: flex;
   align-items: center;
-  gap: calc(var(--space-1) / 2);
+  gap: 0;
   min-inline-size: 0;
 }
 
-.toolbar:has([data-expanded]) {
+/* An open search takes the free row width; the inline row must grow with it or the field stays at its minimum. */
+.toolbar:has([data-expanded]),
+.toolbar:has([data-expanded]) > .inline {
   flex: 1;
 }
 
@@ -14,7 +16,8 @@
   display: none;
 }
 
-@container workspace-pane (inline-size < 340px) {
+/* The tools fold before the location truncates or New session loses its label. */
+@container workspace-pane (inline-size < 460px) {
   .inline {
     display: none;
   }

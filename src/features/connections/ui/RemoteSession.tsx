@@ -896,6 +896,9 @@ function ConnectedRemoteSession({
   });
   const reservedFollowUp = useRef<RemoteQueueDraft | undefined>(undefined);
   const followUpGeneration = useRef(0);
+  // A queued row the owner steered that needs another model: it is sent alone, after the
+  // stopped turn ends and the host switched to its saved model. Stop forgets it.
+  const [steeredId, setSteeredId] = useState<string>();
   // `desktop` records transcript synchronization, including host-created chats.
   // Older hosts identify a desktop-owned run with the reserved `desktop` run id.
   const desktopRun =
@@ -2969,11 +2972,27 @@ function ConnectedRemoteSession({
     working,
     changing: !!changes,
   });
+  const steered = steeredId
+    ? queue.queue.messages.find((row) => row.id === steeredId)
+    : undefined;
+  const steeredReady =
+    !!steered &&
+    queue.loaded &&
+    !queue.error &&
+    online &&
+    connection.canSend &&
+    !snapshot?.historyLoading &&
+    !pageCacheOnly &&
+    !remoteDeleted &&
+    !working &&
+    !changes &&
+    !busy;
   // Send the head of the queue once the turn is over and the machine is
   // reachable. A held queue loses nothing: it simply waits for both. The send
-  // itself stays in `submit`; the hook only schedules it.
+  // itself stays in `submit`; the hook only schedules it. A steered row goes first.
   const { retryDrain } = useQueuedSendDrain({
-    next: nextQueued,
+    next: steered ? (steeredReady ? steered : undefined) : nextQueued,
+    selected: !!steered,
     pageCacheOnly,
     remoteDeleted,
     authorityGeneration: snapshot?.authorityGeneration,
@@ -3468,6 +3487,7 @@ function ConnectedRemoteSession({
 
   const stopTurnAsync = async () => {
     followUpGeneration.current += 1;
+    setSteeredId(undefined);
     submissionGeneration.current += 1;
     const stoppedTurn = preparingTurn.current;
     preparingTurn.current = undefined;
@@ -4325,6 +4345,8 @@ function ConnectedRemoteSession({
       if (generation !== followUpGeneration.current || !alive.current) return false;
       const message = queue.current().messages.find((entry) => entry.id === id);
       if (!message) return false;
+      // Another model cannot join the running turn: stop it, then the drain switches the
+      // host to the row's saved model and sends only this row, as Steer does locally.
       if (
         message.modelTarget &&
         !sameQueuedModelTarget(message.modelTarget, {
@@ -4332,10 +4354,12 @@ function ConnectedRemoteSession({
           model: hostSession.model,
           modelSettings: hostSession.modelSettings ?? {},
         })
-      )
-        throw new Error(
-          t("This queued message uses different model settings. It will wait for a new turn."),
-        );
+      ) {
+        if (busy) await stopTurnAsync();
+        if (!alive.current) return false;
+        setSteeredId(id);
+        return { kind: "waiting" };
+      }
       const accepted = await new Promise<boolean>((resolve) => {
         if (
           !submit(

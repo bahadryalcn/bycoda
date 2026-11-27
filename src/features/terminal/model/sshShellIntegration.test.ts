@@ -137,8 +137,37 @@ it("requests a snapshot only explicitly and never sends remote setup or commands
   }
 });
 
-it("automatically debounces edit notifications only after structured prompt readiness", async () => {
-  vi.useFakeTimers();
+const catalog = (kind: "history" | "commands", suggestions: string[], extra = {}) => ({
+  ...snapshot,
+  status: "catalog",
+  catalog: kind,
+  suggestions,
+  requestId: undefined,
+  prefix: undefined,
+  cursor: undefined,
+  ...extra,
+});
+
+it("validates prompt catalogs as bounded literal command lines", () => {
+  expect(validSshShellState(catalog("history", ["git status", "ls -la /var/log"]), "ssh-tab")).toBe(
+    true,
+  );
+  for (const bad of [
+    catalog("history", ["ls; rm -rf /"]),
+    catalog("history", ["echo $(id)"]),
+    catalog("history", [" leading space"]),
+    catalog("history", ["-flag"]),
+    catalog("history", ["line\nbreak"]),
+    { ...catalog("history", []), catalog: "paths" },
+    catalog(
+      "commands",
+      Array.from({ length: 4001 }, (_, index) => `cmd${index}`),
+    ),
+  ])
+    expect(validSshShellState(bad, "ssh-tab")).toBe(false);
+});
+
+it("filters the prompt catalog locally per keystroke and never writes to the shell while typing", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
   const root = createRoot(host);
@@ -147,78 +176,52 @@ it("automatically debounces edit notifications only after structured prompt read
     controller = useSshShellIntegration(id, true);
     return null;
   }
+  const emit = (payload: unknown) => act(async () => native.listeners.at(-1)!({ payload }));
   try {
     await act(async () => root.render(createElement(Harness, { id: "ssh-tab" })));
-    await act(async () => {
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(native.invoke).not.toHaveBeenCalled();
     expect(controller.automatic).toBe(true);
-    await act(async () => {
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(300);
-    });
+    // A catalog before a verified prompt, or from another account, is ignored.
+    await emit(catalog("history", ["git status"]));
+    await emit({ ...snapshot, status: "ready", promptReady: true });
+    await emit(catalog("history", ["git status"], { user: "mallory" }));
+    expect(controller.catalogMatches("git st")).toEqual([]);
+    await emit(catalog("history", ["git stash list", "git status", "ls -la"]));
+    await emit(catalog("commands", ["git status", "git", "gitk", "ls"]));
+    expect(controller.promptReady).toBe(true);
+    for (const prefix of ["g", "gi", "git", "git ", "git s", "git st"]) {
+      await act(async () => controller.invalidate(true));
+      expect(controller.catalogMatches(prefix).length).toBeGreaterThan(0);
+    }
+    // History first (newest first), then command forms and names; never the typed text itself.
+    expect(controller.catalogMatches("git")).toEqual(["git stash list", "git status", "gitk"]);
+    expect(controller.catalogMatches("git st")).toEqual(["git stash list", "git status"]);
+    expect(controller.catalogMatches("ls; rm")).toEqual([]);
     expect(native.invoke).not.toHaveBeenCalled();
-    await act(async () => native.listeners.at(-1)!({ payload: { ...snapshot, status: "ready" } }));
-    await act(async () => {
-      controller.invalidate();
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(150);
-      controller.invalidate();
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(249);
-    });
-    expect(native.invoke).not.toHaveBeenCalled();
-    await act(async () => vi.advanceTimersByTimeAsync(1));
-    expect(native.invoke).toHaveBeenCalledExactlyOnceWith("ssh_terminal_suggestions_request", {
+
+    await act(async () => controller.setSource("history"));
+    expect(controller.catalogMatches("g")).toEqual(["git stash list", "git status"]);
+    await act(async () => controller.setSource("paths"));
+    expect(controller.catalogMatches("g")).toEqual([]);
+    await act(async () => controller.setSource("commands"));
+
+    const epoch = controller.previewEpoch;
+    await act(async () => controller.acceptCatalog("git st", "git status"));
+    expect(native.invoke).toHaveBeenCalledExactlyOnceWith("ssh_terminal_catalog_accept", {
       id: "ssh-tab",
-      source: "commands",
+      prefix: "git st",
+      value: "git status",
     });
-    await act(async () => {
-      controller.invalidate();
-      controller.notifyInput();
-      controller.suspendAutomatic();
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(native.invoke).toHaveBeenCalledTimes(1);
-    await act(async () =>
-      native.listeners.at(-1)!({ payload: { ...snapshot, status: "unavailable" } }),
-    );
-    await act(async () => {
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(native.invoke).toHaveBeenCalledTimes(1);
-    await act(async () =>
-      native.listeners.at(-1)!({
-        payload: { ...snapshot, status: "unavailable", promptReady: true },
-      }),
-    );
-    await act(async () => {
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(native.invoke).toHaveBeenCalledTimes(2);
-    await act(async () =>
-      native.listeners.at(-1)!({
-        payload: { ...snapshot, status: "unavailable", promptReady: false },
-      }),
-    );
-    await act(async () => {
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(native.invoke).toHaveBeenCalledTimes(2);
-    await act(async () => root.render(createElement(Harness, { id: "new-terminal" })));
-    await act(async () => {
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(native.invoke).toHaveBeenCalledTimes(2);
+    expect(controller.previewEpoch).toBeGreaterThan(epoch);
+
+    // A submitted line or busy shell revokes the prompt capability until the next prompt.
+    await emit({ ...snapshot, status: "unavailable", promptReady: false });
+    expect(controller.catalogMatches("git")).toEqual([]);
+    await emit({ ...snapshot, status: "ready", promptReady: true });
+    expect(controller.catalogMatches("git st")).toEqual(["git stash list", "git status"]);
+    await act(async () => controller.setAutomatic(false));
+    expect(controller.catalogMatches("git st")).toEqual([]);
   } finally {
     await act(async () => root.unmount());
-    vi.useRealTimers();
   }
 });
 
@@ -271,7 +274,15 @@ it("resets to automatic command suggestions across terminal IDs and requires fre
     return null;
   }
   const ready = async (id: string) =>
-    act(async () => native.listeners.at(-1)!({ payload: { ...snapshot, id, status: "ready" } }));
+    act(async () =>
+      native.listeners.at(-1)!({
+        payload: { ...snapshot, id, status: "ready", promptReady: true },
+      }),
+    );
+  const history = async (id: string) =>
+    act(async () =>
+      native.listeners.at(-1)!({ payload: { ...catalog("history", ["git status"]), id } }),
+    );
   try {
     await act(async () => root.render(createElement(Harness, { id: "id-A" })));
     await act(async () => {
@@ -284,31 +295,23 @@ it("resets to automatic command suggestions across terminal IDs and requires fre
     expect(controller.source).toBe("commands");
     expect(controller.automatic).toBe(true);
     expect(controller.state).toBeUndefined();
-    await act(async () => {
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(native.invoke).not.toHaveBeenCalled();
+    expect(controller.promptReady).toBe(false);
+    await history("id-B");
+    expect(controller.catalogMatches("git")).toEqual([]);
     await ready("id-B");
-    await act(async () => {
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(native.invoke).toHaveBeenCalledExactlyOnceWith("ssh_terminal_suggestions_request", {
-      id: "id-B",
-      source: "commands",
-    });
+    await history("id-B");
+    expect(controller.catalogMatches("git")).toEqual(["git status"]);
     await act(async () => root.render(createElement(Harness, { id: "id-B", enabled: false })));
     await act(async () => root.render(createElement(Harness, { id: "id-B", enabled: true })));
     expect(controller.automatic).toBe(true);
     expect(controller.source).toBe("commands");
     expect(controller.state).toBeUndefined();
+    // The previous session's catalog and prompt capability are never inherited.
+    expect(controller.promptReady).toBe(false);
+    expect(controller.catalogMatches("git")).toEqual([]);
     await ready("id-B");
-    await act(async () => {
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(native.invoke).toHaveBeenCalledTimes(2);
+    expect(controller.catalogMatches("git")).toEqual([]);
+    expect(native.invoke).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
     vi.useRealTimers();
@@ -327,7 +330,13 @@ it("revokes history exposure on a known host/user transition but not unavailable
   }
   try {
     await act(async () => root.render(createElement(Harness)));
-    await act(async () => native.listeners.at(-1)!({ payload: { ...snapshot, status: "ready" } }));
+    await act(async () =>
+      native.listeners.at(-1)!({ payload: { ...snapshot, status: "ready", promptReady: true } }),
+    );
+    await act(async () =>
+      native.listeners.at(-1)!({ payload: catalog("history", ["git status"]) }),
+    );
+    expect(controller.catalogMatches("git")).toEqual(["git status"]);
     await act(async () => {
       controller.setSource("history");
       controller.setAutomatic(true);
@@ -351,10 +360,10 @@ it("revokes history exposure on a known host/user transition but not unavailable
     expect(controller.automatic).toBe(false);
     expect(controller.source).toBe("commands");
     expect(controller.state?.user).toBe("bob");
-    await act(async () => {
-      controller.notifyInput();
-      await vi.advanceTimersByTimeAsync(300);
-    });
+    // Alice's history never completes Bob's prompt, even once suggestions are re-enabled.
+    await act(async () => controller.setAutomatic(true));
+    expect(controller.catalogMatches("git")).toEqual([]);
+    await act(async () => controller.setAutomatic(false));
     expect(native.invoke).not.toHaveBeenCalled();
     await act(async () => controller.setAutomatic(true));
     await act(async () =>
@@ -369,7 +378,7 @@ it("revokes history exposure on a known host/user transition but not unavailable
   }
 });
 
-it("keeps the passive list as a display-only preview across text edits and drops it on control input", async () => {
+it("ends an explicit snapshot on typed input and closes the passive list only on control input", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
   document.body.appendChild(host);
@@ -383,14 +392,13 @@ it("keeps the passive list as a display-only preview across text edits and drops
     await act(async () => root.render(createElement(Harness)));
     await act(async () => controller.request());
     await act(async () => native.listeners.at(-1)!({ payload: snapshot }));
+    const epoch = controller.previewEpoch;
     await act(async () => controller.invalidate(true));
     expect(controller.state).toBeUndefined();
-    expect(controller.preview).toEqual({ prefix: "git st", suggestions: ["git status"] });
     await expect(controller.accept("git status")).rejects.toThrow(/stale/);
-    await act(async () => controller.invalidate(true));
-    expect(controller.preview?.suggestions).toEqual(["git status"]);
+    expect(controller.previewEpoch).toBe(epoch);
     await act(async () => controller.invalidate(false));
-    expect(controller.preview).toBeUndefined();
+    expect(controller.previewEpoch).toBeGreaterThan(epoch);
   } finally {
     await act(async () => root.unmount());
     host.remove();

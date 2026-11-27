@@ -5,6 +5,7 @@ import {
   mapProjectTerminal,
   patchProjectTerminals,
   reorderDockTerminals,
+  restartDockTerminalInProject,
   selectDockTerminal,
   withDockOpen,
   withDockSide,
@@ -17,6 +18,7 @@ import {
 } from "../../../features/terminal/model/terminalClose";
 import { type TerminalMetaPatch } from "../../../features/terminal/model/terminalTab";
 import {
+  restartTerminalTabInProject,
   updateTerminalTab,
   withSurfacePanes,
   type WorkspaceTab,
@@ -213,6 +215,19 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
 
   const onTerminalMetaChange = useCallback(
     (fileId: string, patch: TerminalMetaPatch) => {
+      if (patch.restartInProject) {
+        // Its folder stopped being a workspace (a removed worktree): a new terminal in the
+        // project folder takes its place, since this one can never start again.
+        setProjectTerminals((prev) => {
+          const next = prev.map((dock) => restartDockTerminalInProject(dock, fileId));
+          return next.every((dock, index) => dock === prev[index]) ? prev : next;
+        });
+        setTabs((prev) => {
+          const next = prev.map((tab) => restartTerminalTabInProject(tab, fileId));
+          return next.every((tab, index) => tab === prev[index]) ? prev : next;
+        });
+        return;
+      }
       setProjectTerminals((prev) => patchProjectTerminals(prev, fileId, patch));
       setTabs((prev) => {
         const next = prev.map((tab) => updateTerminalTab(tab, fileId, patch));

@@ -42,14 +42,7 @@ function global:__BCLiteral([string]$v) {
 function global:__BCReviewed([string]$v) {
     (__BCLiteral $v) -and ($v -cmatch '^(cd|ls|pwd|git|docker|systemctl|ls -l|ls -la|git status|git diff|git log --oneline|docker ps|docker ps -a|systemctl status)$' -or $v -cmatch '^(cd|ls|systemctl status) [a-zA-Z0-9./_:][a-zA-Z0-9./_:-]*$')
 }
-function global:__BCRequest([string]$source) {
-    ++$global:__BCRS
-    $tuple = "$__BCPS;$__BCRS"
-    if (-not $__BCA -or -not $__BCE) { __BCEmit "unavailable;$tuple"; return }
-    $line=''; $cursor=0; $start=0; $length=0
-    [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line,[ref]$cursor)
-    [Microsoft.PowerShell.PSConsoleReadLine]::GetSelectionState([ref]$start,[ref]$length)
-    if ($cursor -ne $line.Length -or $length -gt 0 -or -not (__BCLiteral $line)) { __BCEmit "no-match;$tuple"; return }
+function global:__BCNames {
     $names=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($c in (Microsoft.PowerShell.Core\Get-Command -ListImported -CommandType Alias,Function,Cmdlet)) { [void]$names.Add($c.Name) }
     foreach ($d in ($env:PATH -split ';')) {
@@ -58,9 +51,18 @@ function global:__BCRequest([string]$source) {
             if ([IO.Path]::GetExtension($f) -in @('.exe','.com','.cmd','.bat','.ps1')) { [void]$names.Add([IO.Path]::GetFileNameWithoutExtension($f)) }
         } } catch {}
     }
+    # A file name with a space cannot be inserted as a bare command.
+    [void]$names.RemoveWhere({ $args[0].Contains(' ') })
+    ,$names
+}
+# One policy for explicit snapshots and the prompt-time catalog (empty $line).
+# Without $names (the per-prompt history catalog) PATH is not enumerated.
+function global:__BCPick([string]$source, [string]$line, [int]$max, $names) {
     $choices=[Collections.Generic.List[string]]::new()
+    $out=[Collections.Generic.List[string]]::new()
     if($source -ne 'paths') {
-        $h=[Microsoft.PowerShell.PSConsoleReadLine]::GetHistoryItems()
+        # History can be unreadable before the first ReadLine.
+        $h=@(); try { $h=[Microsoft.PowerShell.PSConsoleReadLine]::GetHistoryItems() } catch {}
         for($i=$h.Length-1;$i -ge [Math]::Max(0,$h.Length-200);--$i) {
             $c=$h[$i].CommandLine
             if($source -ne 'reviewed' -or $__BCS -ccontains $c) { $choices.Add($c) }
@@ -68,14 +70,14 @@ function global:__BCRequest([string]$source) {
     }
     switch ($source) {
         commands {
-            if ($line -cmatch '^[a-zA-Z0-9_.:-]*$' -and -not $line.StartsWith('-')) { $choices.AddRange([string[]]$names) }
+            if ($names -and $line -cmatch '^[a-zA-Z0-9_.:-]*$' -and -not $line.StartsWith('-')) { $choices.AddRange([string[]]$names) }
             $choices.AddRange([string[]]($__BCS+@('docker ps','docker ps -a','systemctl status')))
         }
         paths {
             if ($line -cmatch '^(cd|ls) ([a-zA-Z0-9./_:-]*)$') {
                 $lead=$Matches[1]+' '; $path=$Matches[2]
                 $dir=[IO.Path]::GetDirectoryName($path); $leaf=[IO.Path]::GetFileName($path)
-                if ($pwd.Provider.Name -ne 'FileSystem') { __BCEmit "no-match;$tuple"; return }
+                if ($pwd.Provider.Name -ne 'FileSystem') { return ,$out }
                 if (-not $dir) { $dir=$pwd.ProviderPath } elseif (-not [IO.Path]::IsPathRooted($dir)) { $dir=[IO.Path]::Combine($pwd.ProviderPath,$dir) }
                 try { foreach($f in [IO.Directory]::EnumerateFileSystemEntries($dir)) {
                     $name=[IO.Path]::GetFileName($f)
@@ -94,13 +96,33 @@ function global:__BCRequest([string]$source) {
             $choices.AddRange([string[]]$__BCS)
         }
     }
-    $out=[Collections.Generic.List[string]]::new()
     foreach($c in $choices) {
         if(-not (__BCLiteral $c) -or ($source -ne 'reviewed' -and $c -ceq $line) -or $c.StartsWith(' ') -or -not $c.StartsWith($line,[StringComparison]::Ordinal) -or $out.Contains($c)) { continue }
-        if($source -ne 'paths' -and -not $names.Contains($c.Split(' ')[0])) { continue }
+        if($names -and $source -ne 'paths' -and -not $names.Contains($c.Split(' ')[0])) { continue }
         $out.Add($c)
-        if($out.Count -ge 12) { break }
+        if($out.Count -ge $max) { break }
     }
+    ,$out
+}
+# Prompt-time candidates. The view filters them on every keystroke, so no key
+# handler runs while the owner types. Command names are re-sent on PATH change.
+$global:__BCP = $null
+function global:__BCCatalog {
+    $tag = "catalog;$__BCU;$__BCH;$__BCPS"
+    __BCEmit "$tag;history;$((__BCPick history '' 100) -join "`t")"
+    if ($env:PATH -ceq $__BCP) { return }
+    $global:__BCP = $env:PATH
+    __BCEmit "$tag;commands;$((__BCPick commands '' 3900 (__BCNames)) -join "`t")"
+}
+function global:__BCRequest([string]$source) {
+    ++$global:__BCRS
+    $tuple = "$__BCPS;$__BCRS"
+    if (-not $__BCA -or -not $__BCE) { __BCEmit "unavailable;$tuple"; return }
+    $line=''; $cursor=0; $start=0; $length=0
+    [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line,[ref]$cursor)
+    [Microsoft.PowerShell.PSConsoleReadLine]::GetSelectionState([ref]$start,[ref]$length)
+    if ($cursor -ne $line.Length -or $length -gt 0 -or -not (__BCLiteral $line)) { __BCEmit "no-match;$tuple"; return }
+    $out = __BCPick $source $line 12 (__BCNames)
     if($out.Count -eq 0) { __BCEmit "no-match;$tuple"; return }
     __BCEmit "suggestions;$__BCU;$__BCH;$tuple;$cursor;$line;$($out -join "`t")"
 }
@@ -118,6 +140,7 @@ function global:PSConsoleHostReadLine {
     $global:__BCA = $true
     if ($__BCE) {
         __BCEmit "ready;$__BCU;$__BCH;$__BCPS;$__BCRS"
+        try { __BCCatalog } catch {}
     } else {
         __BCEmit "unavailable;$__BCPS;$__BCRS"
     }

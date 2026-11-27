@@ -1,6 +1,6 @@
 import { runTextOperation } from "../src/integrations/harness/core/textSource";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { additionalDirsFor } from "../src/integrations/harness/core/additionalDirs";
 import { join } from "node:path";
@@ -1779,6 +1779,207 @@ it("atomically creates a first turn and deduplicates a lost reply", async () => 
   } finally {
     releasePreparation();
     prepare.mockRestore();
+  }
+});
+
+it("acknowledges Stop during turn startup at once and settles without scanning the workspace again", async () => {
+  const { engine, store, project, provider } = await setup();
+  const beginFilesTurn = engine.checkpoints.beginFilesTurn.bind(engine.checkpoints);
+  let preparing!: () => void;
+  let releasePreparation!: () => void;
+  const preparationStarted = new Promise<void>((resolve) => {
+    preparing = resolve;
+  });
+  const preparationHold = new Promise<void>((resolve) => {
+    releasePreparation = resolve;
+  });
+  let abandoned: (() => boolean) | undefined;
+  const prepare = vi
+    .spyOn(engine.checkpoints, "beginFilesTurn")
+    .mockImplementation(async (...args) => {
+      abandoned = args[4];
+      preparing();
+      await preparationHold;
+      return beginFilesTurn(...args);
+    });
+  const finish = vi.spyOn(engine.checkpoints, "finishFilesTurn");
+  try {
+    const started = await engine.command({
+      type: "create",
+      commandId: "stop-startup-create",
+      projectId: project.id,
+      harness: "codex",
+      model: "codex:test",
+      runtimeMode: "supervised",
+      firstTurn: { type: "send", commandId: "stop-startup-send", sessionId: "", text: "hello" },
+    });
+    await preparationStarted;
+    expect(abandoned?.()).toBe(false);
+    // The receipt is durable acceptance: it returns while the turn's startup is still held.
+    const stopped = await engine.command({
+      type: "cancel",
+      commandId: "stop-startup-cancel",
+      sessionId: started.sessionId,
+      runId: started.runId,
+    });
+    expect(stopped.sessionId).toBe(started.sessionId);
+    // The baseline scan is told to end instead of reading every remaining workspace file.
+    expect(abandoned?.()).toBe(true);
+    // A repeated Stop for the same run is accepted too: a second tap is harmless.
+    await engine.command({
+      type: "cancel",
+      commandId: "stop-startup-cancel-again",
+      sessionId: started.sessionId,
+      runId: started.runId,
+    });
+    releasePreparation();
+    await vi.waitFor(async () =>
+      expect((await store.session(started.sessionId)).status).toBe("idle"),
+    );
+    expect(provider.send).not.toHaveBeenCalled();
+    // The provider never ran, so the turn is recorded untouched: no second scan holds the settle.
+    expect(finish).toHaveBeenCalledTimes(1);
+    expect(finish.mock.calls[0].slice(3)).toEqual([true, true]);
+    // The run id stays on the settled snapshot; only its status says the run ended.
+    expect((await store.session(started.sessionId)).runId).toBe(started.runId);
+  } finally {
+    releasePreparation();
+    prepare.mockRestore();
+    finish.mockRestore();
+  }
+});
+
+/** Holds the file-history capture inside the checkpoint queue, where the real scan runs. */
+function holdFileHistoryFinish(engine: HostEngine) {
+  const history = (
+    engine.checkpoints as unknown as {
+      fileHistory: { finish: (...args: unknown[]) => Promise<unknown> };
+    }
+  ).fileHistory;
+  const finish = history.finish.bind(history);
+  let entered!: () => void;
+  let release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const spy = vi.spyOn(history, "finish").mockImplementation(async (...args) => {
+    entered();
+    await hold;
+    return finish(...args);
+  });
+  return { started, release, restore: () => spy.mockRestore() };
+}
+
+it("settles a completed turn before its file history scan and makes the next turn wait for it", async () => {
+  const { engine, store, id, provider, turns, directory, waitForTurnStart } = await setup();
+  const capture = holdFileHistoryFinish(engine);
+  try {
+    const first = await engine.command({
+      type: "send",
+      commandId: "settle-first",
+      sessionId: id,
+      text: "one",
+    });
+    await waitForTurnStart();
+    writeFileSync(join(directory, "first.txt"), "first");
+    turns[0].finish();
+    await capture.started;
+    // The client stops seeing "running" while the workspace is still being scanned.
+    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    const settled = await store.session(id);
+    expect(settled.runId).toBe(first.runId);
+    const firstUser = settled.session.blocks.findLast((block) => block.role === "user")!;
+    // A follow-up and a revert plan are accepted, but both stay behind the unfinished capture.
+    await engine.command({ type: "send", commandId: "settle-second", sessionId: id, text: "two" });
+    let planned = false;
+    const plan = engine.checkpoints
+      .filesRevertPlan(id, directory, firstUser.id, settled.authorityGeneration)
+      .finally(() => {
+        planned = true;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(provider.send).toHaveBeenCalledTimes(1);
+    expect(planned).toBe(false);
+    capture.release();
+    await waitForTurnStart(2);
+    // The first turn's edit was captured in full before the second turn's baseline was read.
+    writeFileSync(join(directory, "second.txt"), "second");
+    turns[1].finish();
+    await plan;
+    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    const after = await engine.checkpoints.filesRevertPlan(
+      id,
+      directory,
+      firstUser.id,
+      (await store.session(id)).authorityGeneration,
+    );
+    expect(after.unavailable).toBeUndefined();
+    expect(after.files.map((file) => [file.path, file.action, file.conflict])).toEqual([
+      ["first.txt", "delete", undefined],
+      ["second.txt", "delete", undefined],
+    ]);
+  } finally {
+    capture.release();
+    capture.restore();
+  }
+});
+
+it("shows a stopped turn as stopped before its file history scan and still reverts its edits", async () => {
+  const { engine, store, id, turns, directory, waitForTurnStart } = await setup();
+  writeFileSync(join(directory, "kept.txt"), "before");
+  const capture = holdFileHistoryFinish(engine);
+  try {
+    const started = await engine.command({
+      type: "send",
+      commandId: "stop-mid-send",
+      sessionId: id,
+      text: "edit",
+    });
+    await waitForTurnStart();
+    writeFileSync(join(directory, "kept.txt"), "after");
+    writeFileSync(join(directory, "added.txt"), "added");
+    await engine.command({
+      type: "cancel",
+      commandId: "stop-mid-cancel",
+      sessionId: id,
+      runId: started.runId,
+    });
+    await capture.started;
+    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    const stopped = await store.session(id);
+    expect(stopped.runId).toBe(started.runId);
+    expect(turns).toHaveLength(1);
+    const user = stopped.session.blocks.findLast((block) => block.role === "user")!;
+    // Requested while the scan is still held: the revert waits and sees the finished history.
+    const plan = engine.checkpoints.filesRevertPlan(
+      id,
+      directory,
+      user.id,
+      stopped.authorityGeneration,
+    );
+    capture.release();
+    const planned = await plan;
+    expect(planned.unavailable).toBeUndefined();
+    expect(planned.files.map((file) => [file.path, file.action, file.conflict]).sort()).toEqual([
+      ["added.txt", "delete", undefined],
+      ["kept.txt", "restore", undefined],
+    ]);
+    await engine.checkpoints.filesRevert(
+      id,
+      directory,
+      user.id,
+      planned.planToken,
+      stopped.authorityGeneration,
+    );
+    expect(readFileSync(join(directory, "kept.txt"), "utf8")).toBe("before");
+    expect(existsSync(join(directory, "added.txt"))).toBe(false);
+    await engine.waitForRun(id, started.runId);
+  } finally {
+    capture.release();
+    capture.restore();
   }
 });
 

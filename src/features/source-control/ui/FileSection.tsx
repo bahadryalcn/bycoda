@@ -34,7 +34,7 @@ export function FileSection({
     label?: string;
     /** Secondary action: lives in the overflow menu instead of the header. */
     overflow?: boolean;
-    /** Destructive action, set apart in the overflow menu. */
+    /** Destructive action, set apart from other actions. */
     danger?: boolean;
     onClick: () => void;
   }[];
@@ -147,6 +147,7 @@ export function FileSection({
                 iconOnly
                 key={action.title}
                 label={action.title}
+                tone={action.danger ? "danger" : undefined}
                 onClick={action.onClick}
               >
                 {action.icon}

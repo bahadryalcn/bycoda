@@ -8,5 +8,6 @@ export {
   isHostAuthorizationRefusal,
   isTransientTransportError,
   isUnsupportedRemoteRoute,
+  isWorkspaceNotRegisteredRefusal,
   presentRemoteError,
 } from "../model/remoteFailure";

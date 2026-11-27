@@ -3,6 +3,13 @@
 use serde::Serialize;
 
 const MARKER: &[u8] = b"\x1b]777;bycoda;";
+/// An unterminated private sequence larger than this is treated as corrupt.
+/// The command-name catalog is the largest legitimate payload.
+const MAX_PENDING_SEQUENCE: usize = 128 * 1024;
+/// Prompt-time catalogs. Suggestions are filtered in the view on every
+/// keystroke, so no request chord is written into the shell while typing.
+const MAX_CATALOG_HISTORY: usize = 100;
+const MAX_CATALOG_COMMANDS: usize = 4000;
 #[cfg(all(test, windows))]
 #[path = "ssh_shell_native_tests.rs"]
 mod native_tests;
@@ -39,6 +46,9 @@ pub(crate) struct ShellEvent {
     pub cursor: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggestions: Option<Vec<String>>,
+    /// Set on `catalog` events: which prompt-time list `suggestions` replaces.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<&'static str>,
 }
 struct Snapshot {
     created: std::time::Instant,
@@ -65,6 +75,10 @@ pub(crate) struct ShellIntegration {
     prompt_seq: u64,
     request_seq: u64,
     snapshot: Option<Snapshot>,
+    /// Literal history lines issued at the current prompt, newest first.
+    history: Vec<String>,
+    /// Command names and common forms, re-issued only when the shell's set changes.
+    commands: Vec<String>,
 }
 
 fn safe_atom(value: &str) -> bool {
@@ -105,6 +119,10 @@ fn literal(value: &str) -> bool {
         ]
         .iter()
         .any(|part| value.to_ascii_lowercase().contains(part))
+}
+/// A catalog entry: one literal command line that does not start an option.
+fn catalog_value(value: &str) -> bool {
+    !value.is_empty() && !value.starts_with([' ', '-']) && literal(value)
 }
 fn reviewed_line(value: &str) -> bool {
     if !literal(value) {
@@ -158,6 +176,8 @@ impl ShellIntegration {
             prompt_seq: 0,
             request_seq: 0,
             snapshot: None,
+            history: Vec::new(),
+            commands: Vec::new(),
         }
     }
     pub(crate) fn for_shell(mode: &str) -> Result<Self, String> {
@@ -195,6 +215,7 @@ impl ShellIntegration {
             prefix: None,
             cursor: None,
             suggestions: None,
+            catalog: None,
         }
     }
     pub(crate) fn input_changed(&mut self, id: &str, data: &str) -> ShellEvent {
@@ -313,6 +334,32 @@ impl ShellIntegration {
         Ok(format!("\x1b[200~{suffix}\x1b[201~"))
     }
 
+    /// Inserts a prompt-catalog completion. `prefix` is the echoed line the view
+    /// read from its own screen; `value` must have been issued by the shell at
+    /// this verified prompt. Nothing is written to the shell before acceptance.
+    pub(crate) fn accept_catalog(&mut self, prefix: &str, value: &str) -> Result<String, String> {
+        if !self.ready {
+            return Err("Shell prompt is no longer ready".into());
+        }
+        if prefix.trim().is_empty()
+            || !literal(prefix)
+            || !catalog_value(value)
+            || value == prefix
+            || !value.starts_with(prefix)
+        {
+            return Err("Suggestion does not match the shell prefix".into());
+        }
+        if !self.history.iter().any(|item| item == value)
+            && !self.commands.iter().any(|item| item == value)
+        {
+            return Err("Suggestion was not issued for this shell prompt".into());
+        }
+        self.snapshot = None;
+        self.pending = None;
+        // Bracketed paste prevents shell metacharacters from becoming key bindings.
+        Ok(format!("\x1b[200~{}\x1b[201~", &value[prefix.len()..]))
+    }
+
     pub(crate) fn filter(&mut self, id: &str, bytes: &[u8]) -> (Vec<u8>, Vec<ShellEvent>) {
         self.buffer.extend_from_slice(bytes);
         let mut visible = Vec::new();
@@ -337,7 +384,7 @@ impl ShellIntegration {
                 .position(|b| *b == 7)
                 .map(|end| end + MARKER.len());
             let Some(end) = end else {
-                if self.buffer.len() > 8192 {
+                if self.buffer.len() > MAX_PENDING_SEQUENCE {
                     self.buffer.clear();
                     self.ready = false;
                     self.snapshot = None;
@@ -375,6 +422,11 @@ impl ShellIntegration {
                 let request_seq = parts[5].parse::<u64>().ok()?;
                 if prompt_seq <= self.prompt_seq {
                     return None;
+                }
+                if self.user != parts[2] || self.host != parts[3] {
+                    // Another account's lists never complete this one's prompt.
+                    self.history.clear();
+                    self.commands.clear();
                 }
                 self.user = parts[2].into();
                 self.host = parts[3].into();
@@ -420,6 +472,40 @@ impl ShellIntegration {
                 self.pending = None;
                 self.snapshot = None;
                 Some(self.event(id, "unavailable"))
+            }
+            // catalog;<user>;<host>;<prompt_seq>;<history|commands>;<tab-separated values>
+            "catalog"
+                if parts.len() == 7
+                    && self.ready
+                    && parts[2] == self.user
+                    && parts[3] == self.host =>
+            {
+                if parts[4].parse::<u64>().ok()? != self.prompt_seq {
+                    return None;
+                }
+                let (kind, limit): (&'static str, usize) = match parts[5] {
+                    "history" => ("history", MAX_CATALOG_HISTORY),
+                    "commands" => ("commands", MAX_CATALOG_COMMANDS),
+                    _ => return None,
+                };
+                let mut values: Vec<String> = Vec::new();
+                for value in parts[6].split('\t').filter(|value| catalog_value(value)) {
+                    if !values.iter().any(|seen| seen == value) {
+                        values.push(value.to_string());
+                        if values.len() >= limit {
+                            break;
+                        }
+                    }
+                }
+                if kind == "history" {
+                    self.history = values.clone();
+                } else {
+                    self.commands = values.clone();
+                }
+                let mut event = self.event(id, "catalog");
+                event.catalog = Some(kind);
+                event.suggestions = Some(values);
+                Some(event)
             }
             "suggestions"
                 if parts.len() == 9
@@ -534,12 +620,17 @@ impl ShellIntegration {
         };
         if self.mode == "powershell" {
             use base64::Engine as _;
-            // UTF-8 payload keeps the complete command below cmd.exe's 8191-byte
-            // limit. Only fixed syntax/base64 crosses the outer shell boundary;
-            // no user text or credential is interpolated into bootstrap code.
+            use std::io::Write as _;
+            // A gzip-compressed UTF-8 payload keeps the complete command far below
+            // cmd.exe's 8191-byte limit. Only fixed syntax/base64 crosses the outer
+            // shell boundary; no user text or credential is interpolated into it.
+            let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+            gzip.write_all(script.as_bytes())
+                .expect("in-memory gzip write cannot fail");
+            let payload = gzip.finish().expect("in-memory gzip cannot fail");
             return format!(
-                "pwsh -NoLogo -NoProfile -NoExit -Command \"[ScriptBlock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{}'))).Invoke()\"",
-                base64::engine::general_purpose::STANDARD.encode(script.as_bytes())
+                "pwsh -NoLogo -NoProfile -NoExit -Command \"[ScriptBlock]::Create([IO.StreamReader]::new([IO.Compression.GZipStream]::new([IO.MemoryStream]::new([Convert]::FromBase64String('{}')),[IO.Compression.CompressionMode]::Decompress)).ReadToEnd()).Invoke()\"",
+                base64::engine::general_purpose::STANDARD.encode(payload)
             );
         }
         if self.mode == "zsh" {
@@ -710,6 +801,116 @@ mod tests {
         assert!(command.contains("chmod 700"));
         assert!(!command.contains("rm -rf"));
         assert!(!shell.script().contains("fc -W"));
+    }
+    #[test]
+    fn prompt_catalog_is_scoped_to_the_verified_prompt_and_accepts_only_issued_values() {
+        let mut shell = ShellIntegration::new();
+        // No catalog is accepted before a verified prompt announces its account.
+        let early = message(&shell, "catalog;alice;remote;0;history;git status");
+        assert!(shell.filter("t", &early).1.is_empty());
+        shell.filter("t", &message(&shell, "ready;alice;remote;1;0"));
+        let history = message(
+            &shell,
+            "catalog;alice;remote;1;history;git status\tls -la\techo $(id)\t-x\t lead\tgit status\t",
+        );
+        let (visible, events) = shell.filter("t", &history);
+        assert!(visible.is_empty());
+        assert_eq!(events[0].status, "catalog");
+        assert_eq!(events[0].catalog, Some("history"));
+        assert_eq!(
+            events[0].suggestions.as_deref(),
+            Some(&["git status".to_string(), "ls -la".to_string()][..])
+        );
+        for stale in [
+            "catalog;alice;remote;2;history;docker ps",
+            "catalog;mallory;remote;1;history;docker ps",
+            "catalog;alice;remote;1;paths;cd /tmp",
+        ] {
+            assert!(
+                shell.filter("t", &message(&shell, stale)).1.is_empty(),
+                "{stale}"
+            );
+        }
+        shell.filter(
+            "t",
+            &message(&shell, "catalog;alice;remote;1;commands;git\tgitk"),
+        );
+        assert_eq!(
+            shell.accept_catalog("git st", "git status").unwrap(),
+            "\x1b[200~atus\x1b[201~"
+        );
+        assert_eq!(
+            shell.accept_catalog("gi", "gitk").unwrap(),
+            "\x1b[200~tk\x1b[201~"
+        );
+        for (prefix, value) in [
+            ("git st", "git stash"),
+            ("", "git"),
+            (" ", "git"),
+            ("git", "git"),
+            ("gi", "ls -la"),
+            ("git;", "git;x"),
+        ] {
+            assert!(
+                shell.accept_catalog(prefix, value).is_err(),
+                "{prefix:?} {value:?}"
+            );
+        }
+        // A submitted line revokes insertion until the next verified prompt.
+        shell.input_changed("t", "\r");
+        assert!(shell.accept_catalog("gi", "gitk").is_err());
+        shell.filter("t", &message(&shell, "ready;alice;remote;2;0"));
+        // Command names persist across prompts; the shell re-sends them only on change.
+        assert!(shell.accept_catalog("gi", "gitk").is_ok());
+        // Another account never completes from this one's lists.
+        shell.filter("t", &message(&shell, "ready;bob;remote;3;0"));
+        assert!(shell.accept_catalog("gi", "gitk").is_err());
+        assert!(shell.accept_catalog("git st", "git status").is_err());
+    }
+    #[test]
+    fn large_command_catalog_arrives_split_across_reads_and_stays_private() {
+        let mut shell = ShellIntegration::new();
+        shell.filter("t", &message(&shell, "ready;alice;remote;1;0"));
+        let names: Vec<String> = (0..MAX_CATALOG_COMMANDS + 50)
+            .map(|index| format!("command-{index:05}"))
+            .collect();
+        let frame = message(
+            &shell,
+            &format!("catalog;alice;remote;1;commands;{}", names.join("\t")),
+        );
+        assert!(frame.len() > 8192 && frame.len() < MAX_PENDING_SEQUENCE);
+        let mut visible = b"before".to_vec();
+        let mut events = Vec::new();
+        for chunk in frame.chunks(997) {
+            let (bytes, mut more) = shell.filter("t", chunk);
+            visible.extend(bytes);
+            events.append(&mut more);
+        }
+        visible.extend(shell.filter("t", b"after").0);
+        assert_eq!(visible, b"beforeafter");
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].suggestions.as_ref().unwrap().len(),
+            MAX_CATALOG_COMMANDS
+        );
+        assert!(shell
+            .accept_catalog("command-0000", "command-00001")
+            .is_ok());
+    }
+    #[test]
+    fn every_shell_issues_its_catalog_at_the_prompt_instead_of_per_keystroke() {
+        for mode in ["bash", "zsh", "powershell"] {
+            let script = ShellIntegration::for_shell(mode).unwrap().script();
+            assert!(script.contains(";history;"), "{mode}");
+            assert!(script.contains(";commands;"), "{mode}");
+        }
+        assert!(
+            ShellIntegration::for_shell("powershell")
+                .unwrap()
+                .remote_command()
+                .len()
+                < 8191
+        );
     }
     fn message(shell: &ShellIntegration, body: &str) -> Vec<u8> {
         format!("\x1b]777;bycoda;{};{body}\x07", shell.nonce).into_bytes()

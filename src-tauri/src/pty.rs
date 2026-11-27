@@ -2016,6 +2016,31 @@ pub fn ssh_terminal_suggestion_accept(
 ) -> Result<(), String> {
     insert_shell_value(&app, &window, &host, &id, &request_id, &value, false)
 }
+/// Accepts a completion filtered by the view from the shell's prompt-time
+/// catalog. Unlike a snapshot request, nothing reaches the shell until here.
+#[tauri::command]
+pub fn ssh_terminal_catalog_accept(
+    app: AppHandle,
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    prefix: String,
+    value: String,
+) -> Result<(), String> {
+    let live = host.get_for_window(&id, window.label())?;
+    let integration = live
+        .shell_integration
+        .as_ref()
+        .ok_or("This terminal has no opted-in shell integration")?;
+    let mut writer = live.writer.lock().unwrap_or_else(|e| e.into_inner());
+    let (insertion, event) = {
+        let mut integration = integration.lock().unwrap_or_else(|e| e.into_inner());
+        let insertion = integration.accept_catalog(&prefix, &value)?;
+        (insertion, integration.dismiss(&id))
+    };
+    emit_shell_event(&app, window.label(), event);
+    write_locked(writer.as_mut(), insertion.as_bytes())
+}
 #[tauri::command]
 pub fn ssh_terminal_command_insert(
     app: AppHandle,

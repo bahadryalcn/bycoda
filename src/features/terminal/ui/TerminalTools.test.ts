@@ -5,7 +5,7 @@ import type { Terminal } from "@xterm/xterm";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TerminalTools } from "./TerminalTools";
 import { RemoteShellSuggestionsOverlay } from "./RemoteShellSuggestionsOverlay";
-import type { SshShellController } from "../model/sshShellIntegration";
+import { catalogSuggestions, type SshShellController } from "../model/sshShellIntegration";
 
 vi.mock("./TerminalCursorPopover", () => ({
   TerminalCursorPopover: ({ children }: { children: React.ReactNode }) =>
@@ -285,7 +285,6 @@ it("keeps automatic exposure and source choices explicit without requesting on m
   const root = createRoot(host);
   const shell = {
     state: undefined,
-    preview: undefined,
     waiting: false,
     notice: "",
     noticeDetails: undefined,
@@ -295,10 +294,13 @@ it("keeps automatic exposure and source choices explicit without requesting on m
     accept: vi.fn(async () => {}),
     dismiss: vi.fn(),
     invalidate: vi.fn(),
-    notifyInput: vi.fn(),
     suspendAutomatic: vi.fn(),
     setAutomatic: vi.fn(),
     setSource: vi.fn(),
+    promptReady: true,
+    previewEpoch: 0,
+    catalogMatches: vi.fn(() => []),
+    acceptCatalog: vi.fn(async () => {}),
   };
   const terminal = {
     focus: vi.fn(),
@@ -339,16 +341,25 @@ it("keeps automatic exposure and source choices explicit without requesting on m
   }
 });
 
-it("keeps the passive suggestion popover mounted while the next snapshot is pending", async () => {
+it("updates only the floating list from the prompt catalog while the owner types", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  let line = "$ git st";
+  let line = "$ ";
   const disposable = { dispose() {} };
+  const parsed: (() => void)[] = [];
+  const typed: ((data: string) => void)[] = [];
   const terminal = {
     element: document.createElement("div"),
     focus: vi.fn(),
-    onWriteParsed: () => disposable,
+    onWriteParsed: (listener: () => void) => {
+      parsed.push(listener);
+      return disposable;
+    },
+    onData: (listener: (data: string) => void) => {
+      typed.push(listener);
+      return disposable;
+    },
     hasSelection: () => false,
     buffer: {
       onBufferChange: () => disposable,
@@ -370,19 +381,9 @@ it("keeps the passive suggestion popover mounted while the next snapshot is pend
       },
     },
   } as unknown as Terminal;
+  const catalog = { history: ["git stash list", "git status"], commands: ["git", "gitk"] };
   const shell = {
-    state: {
-      id: "ssh",
-      status: "suggestions",
-      shell: "bash",
-      user: "alice",
-      host: "server",
-      requestId: "live",
-      prefix: "git s",
-      cursor: 5,
-      suggestions: ["git status", "git stash"],
-    },
-    preview: undefined,
+    state: undefined,
     waiting: false,
     notice: "",
     noticeDetails: undefined,
@@ -392,10 +393,13 @@ it("keeps the passive suggestion popover mounted while the next snapshot is pend
     accept: vi.fn(async () => {}),
     dismiss: vi.fn(),
     invalidate: vi.fn(),
-    notifyInput: vi.fn(),
     suspendAutomatic: vi.fn(),
     setAutomatic: vi.fn(),
     setSource: vi.fn(),
+    promptReady: true,
+    previewEpoch: 0,
+    catalogMatches: (prefix: string) => catalogSuggestions(catalog, "commands", prefix),
+    acceptCatalog: vi.fn(async () => {}),
   } as SshShellController;
   const render = (remoteShell: SshShellController) =>
     act(async () =>
@@ -408,30 +412,35 @@ it("keeps the passive suggestion popover mounted while the next snapshot is pend
         }),
       ),
     );
+  const type = async (next: string) => {
+    await act(async () => typed.forEach((listener) => listener(next.slice(-1))));
+    line = `$ ${next}`;
+    await act(async () => parsed.forEach((listener) => listener()));
+  };
+  const options = () =>
+    [...host.querySelectorAll('[role="option"]')].map((option) => option.textContent);
   try {
-    line = "$ git s";
     await render(shell);
+    // Nothing is shown before the owner types at this prompt.
+    expect(host.querySelector("[data-cursor-popover]")).toBeNull();
+    await type("git s");
     const popover = host.querySelector("[data-cursor-popover]");
-    const option = host.querySelector('[role="option"]');
-    expect(option?.textContent).toBe("git status");
-    // A typed "t" invalidated the live snapshot; the next one is still pending.
-    line = "$ git st";
-    await render({
-      ...shell,
-      state: undefined,
-      waiting: true,
-      preview: { prefix: "git s", suggestions: ["git status", "git stash"] },
-    });
+    expect(popover).not.toBeNull();
+    expect(options()).toEqual(["git stash list", "git status"]);
+    await type("git sta");
     expect(host.querySelector("[data-cursor-popover]")).toBe(popover);
-    expect(host.querySelector('[role="option"]')).toBe(option);
-    line = "$ git sta";
-    await render({
-      ...shell,
-      state: undefined,
-      preview: { prefix: "git s", suggestions: ["git status", "git stash"] },
-    });
+    expect(options()).toEqual(["git stash list", "git status"]);
+    await type("git stat");
     expect(host.querySelector("[data-cursor-popover]")).toBe(popover);
-    expect(shell.accept).not.toHaveBeenCalled();
+    expect(options()).toEqual(["git status"]);
+    // Lookups never reach the shell: no snapshot request and no insertion while typing.
+    expect(shell.request).not.toHaveBeenCalled();
+    expect(shell.acceptCatalog).not.toHaveBeenCalled();
+    // A dismissal keeps the list closed until the next typed edit.
+    await render({ ...shell, previewEpoch: 1 });
+    expect(host.querySelector("[data-cursor-popover]")).toBeNull();
+    await type("git statu");
+    expect(options()).toEqual(["git status"]);
   } finally {
     await act(async () => root.unmount());
     host.remove();

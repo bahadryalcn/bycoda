@@ -9,6 +9,7 @@ import {
   isTimeoutFailure,
   isTransientTransportError,
   isUnsupportedRemoteRoute,
+  isWorkspaceNotRegisteredRefusal,
   presentRemoteError,
   unreachablePollDelay,
 } from "./remoteFailure";
@@ -90,6 +91,21 @@ describe("classifyRemoteError", () => {
       "RPC_WS_RESOURCE_RETIRED: Session was removed",
     ])
       expect(isConnectionFailure(classifyRemoteError(message))).toBe(false);
+  });
+  it("shows a process refused for a folder that is no longer a workspace without the transport code", () => {
+    const sentence =
+      "This folder is no longer a registered workspace on this machine. Reopen its project or worktree, then start again.";
+    const error = `RPC_WS_REMOTE: ${sentence}`;
+    expect(classifyRemoteError(error).kind).toBe("other");
+    expect(isTransientTransportError(error)).toBe(false);
+    expect(presentRemoteError(error, { explicit: true })).toBe(sentence);
+    expect(isWorkspaceNotRegisteredRefusal(error)).toBe(true);
+    expect(isWorkspaceNotRegisteredRefusal(new Error(sentence))).toBe(true);
+    expect(
+      isWorkspaceNotRegisteredRefusal(
+        "RPC_WS_REMOTE: The Host operation could not be confirmed. Refresh its state before retrying.",
+      ),
+    ).toBe(false);
   });
   it.each([
     "Machine is unreachable. Check the host and SSH tunnel, then reconnect.",

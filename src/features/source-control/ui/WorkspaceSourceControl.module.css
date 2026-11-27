@@ -1,8 +1,4 @@
+/* Rows are divided by their separator line alone. */
 .overview {
-  padding-block: 4px 8px;
-}
-
-.overview > div + div {
-  margin-block-start: 8px;
-  padding-block-start: 4px;
+  padding-block: 2px 8px;
 }

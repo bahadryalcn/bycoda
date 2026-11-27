@@ -37,10 +37,10 @@ it("adds the instruction block only when bykit resolves", async () => {
   const host = store();
   const hint = await bykitHint(host, async () => "/usr/bin/bykit");
   expect(hint).toBe(BYKIT_HINT);
-  expect(hint).toContain("Use bykit when available and suitable for the operation.");
-  expect(hint).toContain("Otherwise use a suitable tool, including read-only Python");
-  expect(hint).toContain("including heredocs");
+  expect(hint).toContain("Never write Python/Node/shell scripts or heredocs that write files");
   expect(hint).toContain("bykit edit");
+  expect(hint).toContain("name the gap in your report");
+  expect(hint.split("\n").length).toBeLessThanOrEqual(6);
   resetBykitCache();
   expect(await bykitHint(host, async () => undefined)).toBe("");
 });
@@ -79,4 +79,12 @@ it("reuses the answer for a minute, then looks again", async () => {
   now += 40_000;
   await bykitAvailable(lookup, () => now);
   expect(lookup).toHaveBeenCalledTimes(2);
+});
+
+it("gives the hint for a bundled-only bykit and stays empty when the switch is off", async () => {
+  const host = store();
+  const bundled = () => "/host/bin/bykit";
+  expect(await bykitHint(host, async () => undefined, undefined, bundled)).toBe(BYKIT_HINT);
+  await saveBykitEnabled(host, false);
+  expect(await bykitHint(host, async () => undefined, undefined, bundled)).toBe("");
 });

@@ -567,6 +567,9 @@ export function BykitSettingsPage() {
       <BooleanPreference
         id="bykit-instructions"
         label={t("Tell agents to use bykit")}
+        description={t(
+          "Agents are told to use bykit for large files, diffs, long command output and bulk edits. The Host bundles bykit and agent sessions run it ahead of any copy you installed. Applies to the next agent turn.",
+        )}
         preference={toolPreferences.bykitInstructions}
       />
     </Group>

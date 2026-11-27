@@ -8,7 +8,7 @@ export type RemoteSuggestionSource = "commands" | "paths" | "history";
 
 export type SshShellState = {
   id: string;
-  status: "ready" | "suggestions" | "unavailable";
+  status: "ready" | "suggestions" | "unavailable" | "catalog";
   shell: "bash" | "zsh" | "powershell";
   user: string;
   host: string;
@@ -18,7 +18,38 @@ export type SshShellState = {
   prefix?: string;
   cursor?: number;
   suggestions?: string[];
+  /** On `catalog` events: the prompt-time list that `suggestions` replaces. */
+  catalog?: "history" | "commands";
 };
+
+/** One literal catalog line: the same policy the shell and the native side apply. */
+const CATALOG_VALUE = /^[a-zA-Z0-9./_:][a-zA-Z0-9 ./_:-]*$/;
+const MAX_CATALOG = 4000;
+const MAX_MATCHES = 12;
+
+/** Prompt-time candidates issued by the shell, filtered here on every keystroke. */
+export type SshShellCatalog = { history: string[]; commands: string[] };
+
+/**
+ * Matches for the echoed prefix. There is no shell round trip: while the owner
+ * types only the suggestion list changes, the shell line is never redrawn.
+ */
+export function catalogSuggestions(
+  catalog: SshShellCatalog | undefined,
+  source: RemoteSuggestionSource,
+  prefix: string,
+): string[] {
+  if (!catalog || source === "paths" || prefix.length > 256 || !CATALOG_VALUE.test(prefix))
+    return [];
+  const pool = source === "history" ? catalog.history : [...catalog.history, ...catalog.commands];
+  const matches: string[] = [];
+  for (const value of pool) {
+    if (value === prefix || !value.startsWith(prefix) || matches.includes(value)) continue;
+    matches.push(value);
+    if (matches.length >= MAX_MATCHES) break;
+  }
+  return matches;
+}
 
 /** Structured native events only. Never infer a prompt from raw terminal text. */
 export function validSshShellState(value: unknown, id: string): value is SshShellState {
@@ -27,7 +58,7 @@ export function validSshShellState(value: unknown, id: string): value is SshShel
   if (
     state.id !== id ||
     !["bash", "zsh", "powershell"].includes(state.shell) ||
-    !["ready", "suggestions", "unavailable"].includes(state.status)
+    !["ready", "suggestions", "unavailable", "catalog"].includes(state.status)
   )
     return false;
   if (
@@ -44,6 +75,15 @@ export function validSshShellState(value: unknown, id: string): value is SshShel
   if (state.promptReady !== undefined && typeof state.promptReady !== "boolean") return false;
   if (state.source !== undefined && !["commands", "paths", "history"].includes(state.source))
     return false;
+  if (state.status === "catalog")
+    return (
+      (state.catalog === "history" || state.catalog === "commands") &&
+      Array.isArray(state.suggestions) &&
+      state.suggestions.length <= MAX_CATALOG &&
+      state.suggestions.every(
+        (entry) => typeof entry === "string" && entry.length <= 256 && CATALOG_VALUE.test(entry),
+      )
+    );
   if (state.status !== "suggestions") return true;
   if (
     !state.requestId ||
@@ -66,9 +106,8 @@ export function validSshShellState(value: unknown, id: string): value is SshShel
 export type SshShellController = ReturnType<typeof useSshShellIntegration>;
 
 /**
- * The last passive list, kept on screen while the next snapshot is pending so
- * the preview does not unmount on every keystroke. Display only: it is never
- * accepted, and native code still verifies every insertion.
+ * The passive list for the echoed prefix, filtered from the prompt catalog.
+ * Native code still verifies every insertion against the catalog it issued.
  */
 export type SshShellPreview = { prefix: string; suggestions: string[] };
 
@@ -126,8 +165,6 @@ function subscribeShellState(id: string, subscriber: ShellSubscriber) {
   };
 }
 
-const PREVIEW_RETENTION_MS = 1500;
-
 function requestSuggestions(id: string, source: RemoteSuggestionSource | undefined) {
   return invoke<string>("ssh_terminal_suggestions_request", {
     id,
@@ -170,8 +207,6 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
   const matchesScope = savedPreferences.id === id && savedPreferences.enabled === enabled;
   const automatic = matchesScope && savedPreferences.automatic;
   const source: RemoteSuggestionSource = matchesScope ? savedPreferences.source : "commands";
-  const passiveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const passiveAllowed = useRef(false);
   const preferences = useRef({
     automatic,
     source,
@@ -182,10 +217,6 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
   useLayoutEffect(() => {
     preferences.current = { automatic, source, enabled, id, revision: savedPreferences.revision };
   }, [automatic, source, enabled, id, savedPreferences.revision]);
-  const cancelPassive = useCallback(() => {
-    clearTimeout(passiveTimer.current);
-    passiveTimer.current = undefined;
-  }, []);
   const [snapshot, setState] = useState<SshShellState>();
   const [snapshotRevision, setSnapshotRevision] = useState(-1);
   const [waitingFor, setWaitingFor] = useState<string | null>(null);
@@ -207,38 +238,46 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     if (timer.current) clearTimeout(timer.current);
     timer.current = undefined;
   }, []);
-  const [retained, setRetained] = useState<SshShellPreview & { id: string; revision: number }>();
-  const retentionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const clearPreview = useCallback(() => {
-    clearTimeout(retentionTimer.current);
-    retentionTimer.current = undefined;
-    setRetained(undefined);
-  }, []);
-  const preview =
-    enabled &&
-    automatic &&
-    retained?.id === id &&
-    retained.revision === savedPreferences.revision &&
-    state?.status !== "suggestions"
-      ? { prefix: retained.prefix, suggestions: retained.suggestions }
+  const [catalogState, setCatalog] = useState<SshShellCatalog & { id: string; revision: number }>();
+  const catalog =
+    enabled && catalogState?.id === id && catalogState.revision === savedPreferences.revision
+      ? catalogState
       : undefined;
+  // The native prompt capability: true only at a verified, echoing shell prompt.
+  const [readyFor, setReadyFor] = useState<string | null>(null);
+  const promptReady = enabled && readyFor === id;
+  // Bumped when the owner dismisses, accepts or a view hides the list. The
+  // passive list then stays closed until the next typed edit.
+  const [previewEpoch, setPreviewEpoch] = useState(0);
+  const closePreview = useCallback(() => setPreviewEpoch((value) => value + 1), []);
   const listenerReady = useRef<Promise<void> | undefined>(undefined);
-  const stateRef = useRef(state);
-  useLayoutEffect(() => {
-    stateRef.current = state;
-  }, [state]);
 
   useEffect(() => {
     epoch.current += 1;
-    passiveAllowed.current = false;
     trustedScope.current = undefined;
-    cancelPassive();
+    setReadyFor(null);
     if (!enabled) return;
     let disposed = false;
     const listener = subscribeShellState(id, {
       receive: (payload) => {
         if (disposed || !validSshShellState(payload, id)) return;
         const value = payload;
+        if (value.status === "catalog") {
+          // Lists belong to the account whose prompt announced readiness.
+          const scope = trustedScope.current;
+          if (!scope || scope.host !== value.host || scope.user !== value.user) return;
+          const kind = value.catalog === "history" ? "history" : "commands";
+          const revision = preferences.current.revision;
+          setCatalog((previous) => {
+            const base =
+              previous?.id === id && previous.revision === revision
+                ? previous
+                : { id, revision, history: [], commands: [] };
+            return { ...base, [kind]: value.suggestions ?? [] };
+          });
+          return;
+        }
+        setReadyFor(value.status === "suggestions" || value.promptReady === true ? id : null);
         if (value.status === "ready") {
           const previousScope = trustedScope.current;
           trustedScope.current = { host: value.host, user: value.user };
@@ -246,7 +285,6 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
             previousScope &&
             (previousScope.host !== value.host || previousScope.user !== value.user)
           ) {
-            cancelPassive();
             epoch.current += 1;
             pending.current = false;
             acknowledgement.current = undefined;
@@ -254,7 +292,8 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
             clearTimer();
             setWaitingFor(null);
             setFailure(undefined);
-            clearPreview();
+            setCatalog(undefined);
+            closePreview();
             const reset = {
               ...preferences.current,
               revision: preferences.current.revision + 1,
@@ -265,7 +304,6 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
             updatePreferences(reset);
           }
           if (pending.current) return;
-          passiveAllowed.current = true;
           setSnapshotRevision(preferences.current.revision);
           setState(value);
           return;
@@ -277,15 +315,11 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
             return;
           }
           if (value.requestId !== acknowledgement.current) return;
-        } else {
-          passiveAllowed.current = value.promptReady === true;
-          cancelPassive();
         }
         pending.current = false;
         buffered.current = undefined;
         clearTimer();
         setWaitingFor(null);
-        clearPreview();
         setFailure(
           value.status === "unavailable"
             ? { id, message: t("No safe matching suggestions.") }
@@ -301,17 +335,15 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     listenerReady.current = listener.ready;
     return () => {
       disposed = true;
-      passiveAllowed.current = false;
-      cancelPassive();
       pending.current = false;
       epoch.current += 1;
       clearTimer();
-      clearPreview();
       listenerReady.current = undefined;
       listener.dispose();
     };
-  }, [id, enabled, clearTimer, cancelPassive, clearPreview]);
+  }, [id, enabled, clearTimer, closePreview]);
 
+  /** An explicit snapshot (selection mode, saved commands). Never sent per keystroke. */
   const request = useCallback(
     async (requestedSource?: RemoteSuggestionSource) => {
       if (!enabled) return;
@@ -331,7 +363,6 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
         if (current === epoch.current) {
           pending.current = false;
           setWaitingFor(null);
-          clearPreview();
           setFailure({
             id,
             message: t(
@@ -365,7 +396,6 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
           pending.current = false;
           clearTimer();
           setWaitingFor(null);
-          clearPreview();
           setFailure({
             id,
             message: t("Remote shell integration is unavailable"),
@@ -374,60 +404,37 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
         }
       }
     },
-    [id, enabled, clearTimer, clearPreview],
+    [id, enabled, clearTimer],
   );
 
-  const requestRef = useRef(request);
-  useLayoutEffect(() => {
-    requestRef.current = request;
-  }, [request]);
-  const notifyInput = useCallback(() => {
-    cancelPassive();
-    const preference = preferences.current;
-    if (!preference.enabled || !preference.automatic || !passiveAllowed.current) return;
-    const generation = epoch.current;
-    passiveTimer.current = setTimeout(() => {
-      if (
-        generation === epoch.current &&
-        preferences.current.id === preference.id &&
-        preferences.current.automatic &&
-        passiveAllowed.current
-      )
-        void requestRef.current(preferences.current.source);
-    }, 250);
-  }, [cancelPassive]);
   const suspendAutomatic = useCallback(() => {
-    cancelPassive();
     epoch.current += 1;
     acknowledgement.current = undefined;
     buffered.current = undefined;
     pending.current = false;
     clearTimer();
     setWaitingFor(null);
-    clearPreview();
+    closePreview();
     setState(undefined);
-  }, [cancelPassive, clearTimer, clearPreview]);
+  }, [clearTimer, closePreview]);
   const setAutomatic = useCallback(
     (value: boolean) => {
-      cancelPassive();
       if (!value) suspendAutomatic();
       updatePreferences({ ...preferences.current, automatic: value });
       preferences.current.automatic = value;
     },
-    [cancelPassive, suspendAutomatic],
+    [suspendAutomatic],
   );
   const setSource = useCallback(
     (value: RemoteSuggestionSource) => {
-      cancelPassive();
       suspendAutomatic();
       updatePreferences({ ...preferences.current, source: value });
       preferences.current.source = value;
     },
-    [cancelPassive, suspendAutomatic],
+    [suspendAutomatic],
   );
 
   const dismiss = useCallback(() => {
-    cancelPassive();
     epoch.current += 1;
     acknowledgement.current = undefined;
     buffered.current = undefined;
@@ -435,14 +442,14 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     clearTimer();
     setWaitingFor(null);
     setFailure(undefined);
-    clearPreview();
+    closePreview();
     setState((previous) =>
       previous?.id === id
         ? { ...previous, status: "ready", suggestions: undefined, requestId: undefined }
         : undefined,
     );
     if (enabled) void invoke("ssh_terminal_suggestions_dismiss", { id }).catch(() => undefined);
-  }, [id, enabled, clearTimer, cancelPassive, clearPreview]);
+  }, [id, enabled, clearTimer, closePreview]);
 
   const accept = useCallback(
     async (value: string) => {
@@ -459,37 +466,37 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     [id, enabled, state, dismiss],
   );
 
-  /** `textEdit` keeps the passive list visible (display only) until the next snapshot. */
+  /** Typed input ends an explicit snapshot; the passive list follows the echoed prefix. */
   const invalidate = useCallback(
     (textEdit = false) => {
-      cancelPassive();
       epoch.current += 1;
       acknowledgement.current = undefined;
       buffered.current = undefined;
       pending.current = false;
       clearTimer();
       setWaitingFor(null);
-      const live = stateRef.current;
-      if (!textEdit || !preferences.current.automatic) clearPreview();
-      else {
-        if (live?.status === "suggestions" && live.suggestions?.length)
-          setRetained({
-            id: live.id,
-            revision: preferences.current.revision,
-            prefix: live.prefix ?? "",
-            suggestions: live.suggestions,
-          });
-        clearTimeout(retentionTimer.current);
-        retentionTimer.current = setTimeout(clearPreview, PREVIEW_RETENTION_MS);
-      }
+      if (!textEdit) closePreview();
       setState(undefined);
     },
-    [clearTimer, cancelPassive, clearPreview],
+    [clearTimer, closePreview],
+  );
+
+  /** Passive matches for the echoed prefix from the current prompt's catalog. */
+  const catalogMatches = (prefix: string) =>
+    automatic && promptReady ? catalogSuggestions(catalog, source, prefix) : [];
+
+  /** Native code re-checks the value against the catalog this prompt issued. */
+  const acceptCatalog = useCallback(
+    async (prefix: string, value: string) => {
+      if (!enabled) throwShellUnavailable();
+      await invoke("ssh_terminal_catalog_accept", { id, prefix, value });
+      closePreview();
+    },
+    [id, enabled, closePreview],
   );
 
   return {
     state,
-    preview,
     waiting,
     notice,
     noticeDetails,
@@ -501,7 +508,10 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     source,
     setAutomatic,
     setSource,
-    notifyInput,
     suspendAutomatic,
+    promptReady,
+    previewEpoch,
+    catalogMatches,
+    acceptCatalog,
   };
 }

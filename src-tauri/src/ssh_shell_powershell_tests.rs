@@ -393,6 +393,43 @@ fn actual_powershell_bootstrap_history_insert_and_password_guards() {
     let ready = harness.wait("ready");
     assert_eq!(ready.shell, "powershell");
     assert_eq!(ready.user, std::env::var("USERNAME").unwrap());
+    // The prompt issues its catalog with no request chord: history, then command names.
+    assert_eq!(harness.wait("catalog").catalog, Some("history"));
+    let commands = harness.wait("catalog");
+    assert_eq!(commands.catalog, Some("commands"));
+    assert!(commands
+        .suggestions
+        .unwrap()
+        .contains(&"Get-Date".to_string()));
+    // Completing from it pastes only the suffix: nothing runs until Enter, and the
+    // next prompt's history proves the exact line the shell received.
+    harness.send("Get-Dat");
+    let paste = harness
+        .shell
+        .lock()
+        .unwrap()
+        .accept_catalog("Get-Dat", "Get-Date")
+        .unwrap();
+    harness
+        .writer
+        .lock()
+        .unwrap()
+        .write_all(paste.as_bytes())
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(150));
+    assert!(
+        harness.shell.lock().unwrap().ready,
+        "catalog insertion must not execute"
+    );
+    harness.send("\r");
+    harness.wait("ready");
+    let history = harness.wait("catalog");
+    assert_eq!(history.catalog, Some("history"));
+    assert_eq!(
+        history.suggestions.unwrap().first().map(String::as_str),
+        Some("Get-Date")
+    );
+    eprintln!("PowerShell fixture: prompt catalog insertion verified without a request chord");
     harness.send("git ");
     harness.request();
     let history = harness.wait("suggestions");

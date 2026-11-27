@@ -7,6 +7,19 @@
 }
 
 /*
+ * A bare hairline ends the Pinned block and opens the Settled shelf. It sits in the
+ * 2px row gap, so it adds no space of its own.
+ */
+[data-session-list] > li[data-section-break]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: -1.5px;
+  border-top: 1px solid var(--ui-pane-border);
+  pointer-events: none;
+}
+
+/*
  * The windowed list corrects its own scroll offset when measured rows differ
  * from their estimates; browser scroll anchoring would apply the same shift
  * again and push the list away from where the user was.

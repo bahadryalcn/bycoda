@@ -34,22 +34,27 @@ repository's Graph. A project opened on an empty folder outside any repository,
 including one created by the assistant, a crew or a remote machine, is
 initialized automatically.
 
-**All worktrees** (the default when a project has several worktrees) lists a section
-for each worktree that has uncommitted changes or commits waiting to be pushed (changed
-ones first), and for each separate repository inside
-it (such as `mobile`), all on the same level with no indentation. A section header
-shows the repository icon, the bold name (the project name for the project folder, the
-branch for another worktree), the muted branch, sync arrows, the change count, and refresh
-and a menu on hover. Clean and unknown worktrees are not listed here; they are
-in the header picker. With none changed or ahead, the session's worktree is shown. The first
-section opens; the rest open on click. Each section's menu offers **Show only this
-repository** (remembered per project) and **Show all repositories**. Rows carry no text
-markers such as "This session" or "Separate repository"; hover for the path. The Changes
-tab badge is the sum of the section counts.
+**All repositories** (the default when a project has several worktrees) works like VS
+Code's Source Control view: it lists a section for every worktree, and for each separate
+repository inside an open one (such as `mobile`), all on the same level with no
+indentation. Worktrees with uncommitted changes or commits waiting to be pushed come first
+and start open; clean and unknown worktrees follow, collapsed. With none changed or ahead,
+the session's worktree opens. A section header shows the bold name (the project name for
+the project folder, the folder for another worktree), the change count, sync arrows, the
+branch picker (open or collapsed, so each worktree switches its own branch here), and
+refresh and a menu. Collapsed rows sit tight between their separator lines, and each
+section's staged and unstaged files scroll within a capped height so the other worktrees
+stay in reach. Each section's menu offers **Show only this repository** (remembered per
+project) and **Show all repositories**. Rows carry no text markers such as "This session"
+or "Separate repository"; hover for the path. The Changes tab badge is the sum of the
+changed sections' counts.
+
+The header picker scopes only the Changes panel and where new sessions start; the
+Sessions list always shows every session of the project.
 
 Remote projects use the same picker, with a server icon before the project icon.
 
-The header picker is the repository list: **All worktrees** with the total count, worktrees
+The header picker is the repository list: **All repositories** with the total count, worktrees
 with uncommitted changes first, then the project folder and other worktrees, and last
 **Agent worktrees** (shown with an agent icon, no folder name), collapsed to **… N more**
 after five rows. A worktree whose state could not be read shows no change count and is
@@ -72,7 +77,7 @@ default branch.
 Each panel's staging, unstaging, commit and sync actions apply only to that exact
 repository. A file with the same relative name in another checkout is a separate
 target. A single review target shows its Stashes and Graph sections below its changes.
-All repositories and All worktrees show one Stashes and Graph below the rows instead
+All repositories shows one Stashes and Graph below the rows instead
 of one per row: Auto follows the repository you last used in the list, and the
 selector in the Graph header shows the active repository even when collapsed and
 switches to another repository. The full Commit graph offers the same selector;
@@ -105,8 +110,8 @@ Changes retain staged and unstaged sections and the saved list/tree presentation
 File rows expose the exact relative path. File names keep the same size and weight,
 including repeated basenames; parent directories use smaller, secondary text.
 A partially staged path can appear in both sections, so filter
-results count staged and unstaged **entries**. Filtering changes the displayed list;
-**All** operations still affect the entire repository, including hidden entries.
+results count staged and unstaged **entries**. With a filter active, bulk stage,
+unstage and discard apply to the shown entries. **Open All Changes** opens the full diff.
 Selected-entry actions retain their own narrower scope and existing confirmations.
 
 Select a deleted-file row to inspect its deletion diff; opening the missing file
@@ -114,6 +119,8 @@ in an editor remains unavailable. Commits opened from file history or blame keep
 the repository that was inspected, even when another checkout is active.
 Changing the Git language updates labels in already-open diffs.
 
+The **Changes** header has separate icons for **Open All Changes** and **Discard All Changes**,
+alongside the filter, list/tree toggle and stage action. Bulk discard asks for confirmation.
 Unstaged rows offer **Discard Changes** directly beside **Stage Changes**, as well
 as in the file menu. Row actions appear on hover, keyboard focus or selection and
 remain available on touch devices. Discard keeps its confirmation and selected-entry

@@ -1511,6 +1511,26 @@ for (const theme of ["light", "dark"]) {
       );
     const count = async () =>
       (await requests()).filter((r) => r.command === "ssh_terminal_suggestions_request").length;
+    const catalog = async (kind: "history" | "commands", suggestions: string[]) =>
+      page.evaluate(
+        ({ kind, suggestions }) => {
+          (window as any).serversFixtureEmit("ssh-shell-state", {
+            id: "autocomplete-fixture",
+            status: "catalog",
+            catalog: kind,
+            promptReady: true,
+            shell: "bash",
+            user: "fixture",
+            host: "remote.example.invalid",
+            suggestions,
+          });
+        },
+        { kind, suggestions },
+      );
+    const writes = async () =>
+      (await requests()).filter((r) => r.command === "pty_write").map((r) => r.input.data);
+    const accepts = async () =>
+      (await requests()).filter((r) => r.command === "ssh_terminal_catalog_accept");
     // Pane tools appear on pointer hover (not terminal focus, and not right after typing).
     await page.locator(".bycoda-terminal").first().hover();
     await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
@@ -1519,88 +1539,75 @@ for (const theme of ["light", "dark"]) {
     await expect(automatic).toHaveAttribute("aria-checked", "true");
     await automatic.click();
     await page.keyboard.press("Escape");
+    // The shell issues its candidates once, at the prompt; typing never asks it again.
     await emit("ready", true);
+    await catalog("history", []);
+    await catalog("commands", ["docker"]);
     await input.focus();
     await page.keyboard.type("doc");
+    const preview = page.getByLabel("Remote suggestion preview", { exact: true });
     await page.waitForTimeout(350);
-    expect(await count()).toBe(0);
+    await expect(preview).toBeHidden();
     await page.locator(".bycoda-terminal").first().hover();
     await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     await page.locator("summary").filter({ hasText: "Suggestion settings" }).click();
     await automatic.click();
     await page.keyboard.press("Escape");
     await input.focus();
+    for (let index = 0; index < 3; index++) await page.keyboard.press("Backspace");
     await page.keyboard.type("doc");
-    const preview = page.getByLabel("Remote suggestion preview", { exact: true });
     await expect(preview).toBeVisible();
     await expect(
       page.locator('.xterm-screen [aria-hidden="true"]').filter({ hasText: "ker" }),
     ).toBeVisible();
     await expect(preview.getByRole("option", { name: "docker", exact: true })).toBeVisible();
     await expect(input).toBeFocused();
-    expect(
-      (await requests()).find((r) => r.command === "ssh_terminal_suggestions_request")?.input
-        .source,
-    ).toBe("commands");
-    const beforeNavigation = await count();
-    const beforeNavigationWrites = (await requests()).filter(
-      (r) => r.command === "pty_write",
-    ).length;
+    // Every keystroke reached the shell as itself; no suggestion chord was written.
+    expect(await count()).toBe(0);
+    expect(await writes()).toEqual(["d", "o", "c", "\x7f", "\x7f", "\x7f", "d", "o", "c"]);
+    const beforeNavigationWrites = (await writes()).length;
     for (const key of ["ArrowUp", "ArrowDown", "Tab", "Enter", "Control+r"])
       await page.keyboard.press(key);
     await expect(input).toBeFocused();
     await expect
-      .poll(async () =>
-        (await requests())
-          .filter((r) => r.command === "pty_write")
-          .slice(beforeNavigationWrites)
-          .map((r) => r.input.data),
-      )
+      .poll(async () => (await writes()).slice(beforeNavigationWrites))
       .toEqual(["\u001b[A", "\u001b[B", "\t", "\r", "\u0012"]);
-    expect(
-      (await requests()).filter((r) => r.command === "ssh_terminal_suggestion_accept"),
-    ).toHaveLength(0);
-    await page.waitForTimeout(350);
-    expect(await count()).toBe(beforeNavigation);
+    expect(await accepts()).toHaveLength(0);
     await expect(preview).toBeHidden();
-    await page.keyboard.type("c");
+    await page.keyboard.type("doc");
     await expect(preview).toBeVisible();
-    const beforeAccept = (await requests()).filter((r) => r.command === "pty_write").length;
+    const beforeAccept = (await writes()).length;
     await preview.getByRole("option", { name: "docker", exact: true }).click();
-    await expect
-      .poll(
-        async () =>
-          (await requests()).filter((r) => r.command === "ssh_terminal_suggestion_accept").length,
-      )
-      .toBe(1);
-    expect((await requests()).filter((r) => r.command === "pty_write")).toHaveLength(beforeAccept);
+    await expect.poll(async () => (await accepts()).length).toBe(1);
+    expect((await accepts())[0].input).toEqual({
+      id: "autocomplete-fixture",
+      prefix: "doc",
+      value: "docker",
+    });
+    expect(await writes()).toHaveLength(beforeAccept);
     await expect(input).toBeFocused();
+    expect(await count()).toBe(0);
+    // Explicit selection mode is the one place that still asks the shell, once, on request.
     await page.keyboard.press("Control+Space");
     await expect(page.getByLabel("Remote suggestion selection", { exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(input).toBeFocused();
+    const explicit = await count();
+    expect(explicit).toBe(1);
+    // A busy or echo-off shell revokes the list until its next verified prompt.
     await emit("unavailable", false);
-    const blocked = await count();
-    await page.keyboard.type("x");
+    for (let index = 0; index < 3; index++) await page.keyboard.press("Backspace");
     await page.waitForTimeout(350);
-    expect(await count()).toBe(blocked);
-    // Semantic no-match at a safe prompt must not latch autocomplete off.
-    await emit("unavailable", true);
-    await page.evaluate(() => (window as any).serversFixtureSuggestion("doc", true));
-    await page.keyboard.type("y");
-    await expect.poll(count).toBe(blocked + 1);
-    await page.evaluate(() => (window as any).serversFixtureSuggestion("doc", false));
-    await page.keyboard.type("z");
+    await expect(preview).toBeHidden();
+    await emit("ready", true);
+    await page.keyboard.type("k");
     await expect(preview).toBeVisible();
-    await expect.poll(count).toBe(blocked + 2);
-    const beforeIme = await count();
     await input.dispatchEvent("compositionstart", { data: "日" });
-    await page.keyboard.type("ime");
-    await page.waitForTimeout(350);
-    expect(await count()).toBe(beforeIme);
+    await expect(preview).toBeHidden();
     await input.dispatchEvent("compositionend", { data: "日" });
-    await page.keyboard.type("x");
+    await page.keyboard.press("Backspace");
     await expect(preview).toBeVisible();
+    expect(await count()).toBe(explicit);
     const folder = "temp/verification/2026-10-21-ssh-reliability/autocomplete-browser";
     await mkdir(folder, { recursive: true });
     await page.screenshot({ path: `${folder}/${theme}-390-passive.png` });
@@ -1614,10 +1621,9 @@ for (const theme of ["light", "dark"]) {
       }),
     );
     await expect(preview).toBeHidden();
-    const beforeAlternate = await count();
     await page.keyboard.type("topkeys");
     await page.waitForTimeout(350);
-    expect(await count()).toBe(beforeAlternate);
+    expect(await count()).toBe(explicit);
   });
 }
 

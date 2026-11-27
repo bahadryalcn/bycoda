@@ -14,6 +14,19 @@
   padding: 0;
   line-height: inherit;
 }
+/* A solid accent count pill that stays legible over an icon. */
+.solid.solid {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 1rem;
+  block-size: 1rem;
+  padding-inline: var(--space-1);
+  border-radius: 999px;
+  background: var(--ui-tone-accent-solid);
+  color: var(--ui-tone-accent-on-solid);
+  --badge-foreground: var(--ui-tone-accent-on-solid);
+}
 .xs.xs[data-variant="dot"] {
   padding-inline: 0;
 }

@@ -371,6 +371,8 @@ export function createEnvironmentRuntime(
         "voice.local.v1",
         "voice.cloud.v1",
         "voice.transcription-models.v1",
+        // A paired phone may run the opt-in dictation cleanup (voice.dictation.process/cancel).
+        "voice.dictation.cleanup.v1",
         "voice.local.setup.v1",
         "social.v1",
         "social.policy.reviewed.v1",

@@ -757,6 +757,8 @@ export class HostEngine {
   private live = new Map<string, LiveBatch & { timer?: ReturnType<typeof setTimeout> }>();
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private recoveryWork = new Map<string, Promise<void>>();
+  /** File-history captures of turns that already settled; shutdown waits for them. */
+  private fileHistoryCaptures = new Set<Promise<unknown>>();
   /** Warm lightweight providers still belong to this engine and drain at shutdown. */
   private retainedProviders = new Map<string, Set<HostProvider>>();
   /** Original turn receipts retained for an explicit Host-to-desktop transfer. */
@@ -4734,7 +4736,14 @@ export class HostEngine {
             if (active.filesTurn || !active.managed)
               await (
                 active.filesTurn
-                  ? this.checkpoints.beginFilesTurn(session.id, session.cwd, runId!, userBlockId)
+                  ? this.checkpoints.beginFilesTurn(
+                      session.id,
+                      session.cwd,
+                      runId!,
+                      userBlockId,
+                      // Stop during startup must not wait for a read of every workspace file.
+                      () => active.cancelled || this.closing,
+                    )
                   : this.checkpoints.begin(session.id, session.cwd, runId!, userBlockId)
               ).catch((error) => {
                 // Lease publish I/O failures/timeouts (`checkpoint-coordination:`) are
@@ -4968,17 +4977,29 @@ export class HostEngine {
             }
           }
         }
-        if (active.filesTurn || !active.managed) {
-          await (
-            active.filesTurn
-              ? this.checkpoints.finishFilesTurn(
-                  session.id,
-                  session.cwd,
-                  runId!,
-                  !!error || active.cancelled,
-                )
-              : this.checkpoints.finish(session.id, session.cwd, runId!)
-          ).catch((reason) => console.warn("Workspace checkpoint failed", reason));
+        // The file-history capture reads the whole workspace, which takes seconds on a large
+        // checkout. Its writer is retired, so it is queued here and the session settles without
+        // waiting for it. The checkpoint queue is first-in-first-out per session: the next
+        // turn's baseline, a revert and a rewind all run after this capture.
+        let fileHistoryCapture: Promise<unknown> | undefined;
+        if (active.filesTurn) {
+          const capture = this.checkpoints
+            .finishFilesTurn(
+              session.id,
+              session.cwd,
+              runId!,
+              !!error || active.cancelled,
+              // A turn stopped before its provider ran changed nothing: settle without rescanning.
+              !active.providerEntered,
+            )
+            .catch((reason) => console.warn("Workspace checkpoint failed", reason))
+            .finally(() => this.fileHistoryCaptures.delete(capture));
+          this.fileHistoryCaptures.add(capture);
+          fileHistoryCapture = capture;
+        } else if (!active.managed) {
+          await this.checkpoints
+            .finish(session.id, session.cwd, runId!)
+            .catch((reason) => console.warn("Workspace checkpoint failed", reason));
         }
         await this.store.db.scope(() =>
           this.operations.enqueue(session.id, async () => {
@@ -5077,6 +5098,8 @@ export class HostEngine {
             }
           }),
         );
+        // The run itself ends only once its file history is complete.
+        await fileHistoryCapture;
       })
       .catch(async (error) => {
         clearTimeout(this.live.get(session.id)?.timer);
@@ -5451,7 +5474,9 @@ export class HostEngine {
     if (!active) return;
     if (active.runId !== runId) throw new Error("The session has a different active turn.");
     await active.done;
-    if (this.running.has(sessionId)) throw new Error("Session cleanup is still pending.");
+    // A follow-up turn may already run while this one finished its file history.
+    if (this.running.get(sessionId) === active)
+      throw new Error("Session cleanup is still pending.");
   }
 
   close(): Promise<void> {
@@ -5511,6 +5536,7 @@ export class HostEngine {
       ),
     );
     await join(originals.map(([, active]) => active.done));
+    await join([...this.fileHistoryCaptures]);
     await join(this.recoveryWork.values());
     await join([this.operations.drain()]);
     await join([this.providerActivities.drain()]);

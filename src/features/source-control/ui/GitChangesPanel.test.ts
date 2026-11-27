@@ -2824,7 +2824,7 @@ it("shows one header row for a worktree: its branch picker alone, with no worktr
   expect(picker.textContent).not.toContain("Worktrees");
 });
 
-it("titles an open worktree section once by its branch, with no picker, folder or text marker", async () => {
+it("names an open worktree section by its folder, with its branch picker beside it", async () => {
   vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "feature/row" }));
   await act(async () =>
     root.render(
@@ -2856,20 +2856,20 @@ it("titles an open worktree section once by its branch, with no picker, folder o
     ),
   );
   const header = container.querySelector("header")!;
-  // The branch is the visible identity; a worktree's branch is not switched here, so no picker.
-  expect(header.querySelector('button[aria-label="Branch feature/row"]')).toBeNull();
+  // As in VS Code, every repository row switches its own branch.
+  expect(header.querySelector('button[aria-label="Branch feature/row"]')).not.toBeNull();
   const toggle = header.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
-  expect(toggle.textContent).toMatch(/^feature\/row/);
-  expect(toggle.textContent).not.toContain("open-worktree");
+  expect(toggle.textContent).toMatch(/^open-worktree/);
+  expect(toggle.textContent).not.toContain("feature/row");
   expect(await tooltipText(toggle)).toContain("/open-worktree");
-  // One leading icon, and no "Worktree" label or path in the row.
-  expect(header.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
+  // The picker carries the branch icon, and no "Worktree" label or path in the row.
+  expect(toggle.querySelector("svg.lucide-git-branch")).toBeNull();
   expect(toggle.querySelector("svg.lucide-folder-tree")).toBeNull();
   expect(header.textContent).not.toContain("Worktree");
   expect(header.textContent).not.toContain("/open-worktree");
 });
 
-it("shows a collapsed worktree as one row: branch icon and bold branch, no folder or text marker", async () => {
+it("shows a collapsed worktree as one row: bold folder and its branch picker, no text marker", async () => {
   vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "feature/row" }));
   await act(async () =>
     root.render(
@@ -2902,15 +2902,17 @@ it("shows a collapsed worktree as one row: branch icon and bold branch, no folde
     ),
   );
   const toggle = container.querySelector<HTMLButtonElement>("header button[aria-expanded]")!;
-  expect(toggle.textContent).toMatch(/^feature\/row/);
-  expect(toggle.textContent).not.toContain("open-worktree");
+  expect(toggle.textContent).toMatch(/^open-worktree/);
   expect(toggle.textContent).not.toContain("This session");
-  expect(toggle.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
+  // Collapsed rows keep the branch picker, as in VS Code.
+  expect(
+    container.querySelector('header button[aria-label="Branch feature/row"]'),
+  ).not.toBeNull();
   expect(await tooltipText(toggle)).toContain("/work/open-worktree");
   expect(container.querySelector("header")!.textContent).not.toContain("/work");
 });
 
-it("shows a nested separate repository with the repository icon, muted branch and no text label", async () => {
+it("shows a nested separate repository with the repository icon, its branch picker and no text label", async () => {
   vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "main" }));
   await act(async () =>
     root.render(
@@ -2926,7 +2928,8 @@ it("shows a nested separate repository with the repository icon, muted branch an
     ),
   );
   const toggle = container.querySelector<HTMLButtonElement>("header button[aria-expanded]")!;
-  expect(toggle.textContent).toBe("mobilemain");
+  expect(toggle.textContent).toBe("mobile");
+  expect(container.querySelector('header button[aria-label="Branch main"]')).not.toBeNull();
   expect(toggle.textContent).not.toContain("Separate repository");
   expect(await tooltipText(toggle)).toContain("Separate repository");
   expect(toggle.querySelector("svg.lucide-folder-git-2")).not.toBeNull();

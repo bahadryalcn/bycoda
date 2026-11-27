@@ -15,7 +15,7 @@ vi.mock("../../../features/connections/public/connections", () => ({
   }),
 }));
 
-it("opens and splits the selected remote checkout on its own saved SSH machine", async () => {
+it("opens remote shells over saved SSH, or on the project's Host without SSH", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const root = createRoot(document.createElement("div"));
   const projectCwdRef = { current: "remote://owner/G:/project" };
@@ -56,11 +56,21 @@ it("opens and splits the selected remote checkout on its own saved SSH machine",
     const second = docks[0].pane.activeFileId;
     expect(docks[0].sshShells?.[second]).toEqual(docks[0].sshShells?.[first]);
     expect(docks[0].splitGroups).toEqual([[first, second]]);
+    expect(docks[0].hostShells).toBeUndefined();
     projectCwdRef.current = "remote://url-only/G:/project";
     await act(async () => root.render(createElement(Consumer)));
-    expect(actions.remoteTerminalAvailable).toBe(false);
-    expect(actions.openProjectTerminal(projectCwdRef.current)).toBe(false);
+    expect(actions.remoteTerminalAvailable).toBe(true);
+    expect(actions.openProjectTerminal("remote://owner/G:/project")).toBe(false);
+    expect(actions.openProjectTerminal(projectCwdRef.current, "pwsh")).toBe(false);
     expect(docks).toHaveLength(1);
+    expect(actions.openProjectTerminal(projectCwdRef.current)).toBe(true);
+    const hostDock = docks[1];
+    const hosted = hostDock.pane.activeFileId;
+    expect(hostDock.sshShells).toBeUndefined();
+    expect(hostDock.hostShells?.[hosted]).toEqual({ projectCwd: "remote://url-only/G:/project" });
+    actions.onSplitProjectTerminal(hosted);
+    const hostedSplit = docks[1].pane.activeFileId;
+    expect(docks[1].hostShells?.[hostedSplit]).toEqual(docks[1].hostShells?.[hosted]);
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

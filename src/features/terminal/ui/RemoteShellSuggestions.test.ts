@@ -4,15 +4,16 @@ import { createRoot } from "react-dom/client";
 import type { Terminal } from "@xterm/xterm";
 import { afterEach, expect, it, vi } from "vitest";
 import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
-import type { SshShellController } from "../model/sshShellIntegration";
+import type { SshShellController, SshShellPreview } from "../model/sshShellIntegration";
 afterEach(() => vi.unstubAllGlobals());
 async function setup(
   alternate = false,
   duplicates = false,
   shellMode: "bash" | "zsh" | "powershell" = "bash",
   selectionMode = true,
-  preview?: SshShellController["preview"],
+  preview?: SshShellPreview,
   live = true,
+  canAcceptPreview?: () => boolean,
 ) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
@@ -34,7 +35,6 @@ async function setup(
             : ["git status", "git diff"],
         }
       : undefined,
-    preview: undefined,
     waiting: false,
     notice: "",
     noticeDetails: undefined,
@@ -46,8 +46,11 @@ async function setup(
     source: "commands",
     setAutomatic: vi.fn(),
     setSource: vi.fn(),
-    notifyInput: vi.fn(),
     suspendAutomatic: vi.fn(),
+    promptReady: true,
+    previewEpoch: 0,
+    catalogMatches: vi.fn(() => []),
+    acceptCatalog: vi.fn(async () => {}),
   };
   const terminal = {
     element: document.createElement("div"),
@@ -64,6 +67,7 @@ async function setup(
         onClose: close,
         selectionMode,
         preview,
+        canAcceptPreview,
       }),
     ),
   );
@@ -222,23 +226,36 @@ it("browses the automatic list with Alt arrows without taking shell history keys
   }
 });
 
-it("keeps a retained passive list on screen without taking completion keys", async () => {
+it("accepts the passive catalog list through native catalog verification", async () => {
   const preview = { prefix: "git s", suggestions: ["git status", "git stash"] };
   const context = await setup(false, false, "bash", false, preview, false);
   try {
     const options = [...context.host.querySelectorAll('[role="option"]')];
     expect(options.map((option) => option.textContent)).toEqual(["git status", "git stash"]);
     expect(context.host.textContent).not.toContain("Waiting for the shell prompt");
+    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    await act(async () => context.terminal.element!.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect(context.shell.acceptCatalog).toHaveBeenCalledExactlyOnceWith("git s", "git status");
+    expect(context.shell.accept).not.toHaveBeenCalled();
+    expect(context.terminal.input).not.toHaveBeenCalled();
+  } finally {
+    await context.cleanup();
+  }
+});
+
+it("leaves completion keys to the shell until the typed edit has echoed", async () => {
+  const preview = { prefix: "git s", suggestions: ["git status"] };
+  const context = await setup(false, false, "bash", false, preview, false, () => false);
+  try {
     for (const value of ["Tab", "ArrowRight"]) {
-      const event = new KeyboardEvent("keydown", {
-        key: value,
-        bubbles: true,
-        cancelable: true,
-      });
+      const event = new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true });
       await act(async () => context.terminal.element!.dispatchEvent(event));
       expect(event.defaultPrevented).toBe(false);
     }
-    await act(async () => (options[0] as HTMLElement).click());
+    const option = context.host.querySelector('[role="option"]') as HTMLElement;
+    await act(async () => option.click());
+    expect(context.shell.acceptCatalog).not.toHaveBeenCalled();
     expect(context.shell.accept).not.toHaveBeenCalled();
   } finally {
     await context.cleanup();

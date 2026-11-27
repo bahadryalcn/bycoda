@@ -18,7 +18,11 @@ import { createTarArchive, extractTarMembers } from "./package-archive.mjs";
 import { readBuildIdentity } from "../scripts/build/build-info.mjs";
 import { readDesktopHelper, copyDesktopHelperBundle } from "../scripts/setup/agent-desktop.mjs";
 import { readCuaDriver, copyCuaDriverBundle } from "../scripts/setup/cua-driver.mjs";
-import { signDesktopHelperBundle } from "../scripts/release/sign-desktop-helper.mjs";
+import { BYKIT_PIN, copyBykit, readBykitArchive } from "../scripts/setup/bykit.mjs";
+import {
+  signDesktopHelperBundle,
+  signStandaloneExecutable,
+} from "../scripts/release/sign-desktop-helper.mjs";
 import { copyHostPty } from "../scripts/build/host-pty.mjs";
 import {
   buildHostServiceLauncher,
@@ -108,6 +112,8 @@ if (
   throw new Error("--desktop-helper-cache requires a directory");
 const desktopHelperCache =
   desktopHelperCacheIndex >= 0 ? resolve(args[desktopHelperCacheIndex + 1]) : undefined;
+// Targets without a pinned bykit release (arm64 Linux and Windows) ship without it.
+const bykitTargets = new Set(targets.filter((value) => value in BYKIT_PIN.targets));
 const desktopHelpers = new Map();
 const cuaDrivers = new Map();
 for (const target of targets) {
@@ -124,6 +130,12 @@ for (const target of targets) {
       : undefined;
   if (cua) cuaDrivers.set(target, cua);
 }
+// Download and verify every pinned bykit archive before any package is replaced; a
+// placeholder or mismatching checksum stops here.
+for (const target of bykitTargets)
+  await readBykitArchive({ target, cacheRoot: desktopHelperCache });
+for (const target of targets.filter((value) => !bykitTargets.has(value)))
+  console.log(`No pinned bykit release for ${target}; it ships without bykit.`);
 const nativeAdmission = args.includes("--native-admission");
 const admissionDirectoryIndex = args.indexOf("--native-admission-dir");
 if (
@@ -342,6 +354,18 @@ for (const target of targets) {
         arch,
       });
   }
+  if (bykitTargets.has(target)) {
+    const [platform] = target.split("-");
+    const bykit = await copyBykit({ target, folder, cacheRoot: desktopHelperCache });
+    if (platform === "darwin" && process.platform === "darwin" && macosSigningIdentity)
+      await signStandaloneExecutable(bykit.path, { platform, identity: macosSigningIdentity });
+    else if (platform === "win32" && signDesktopHelper)
+      await signStandaloneExecutable(bykit.path, {
+        platform,
+        certificateThumbprint: process.env.BYCODA_WINDOWS_SIGNING_CERT_SHA1,
+        storeLocation: process.env.BYCODA_WINDOWS_SIGNING_STORE || "CurrentUser",
+      });
+  }
   if (cuaDrivers.has(target)) {
     const [platform, arch] = target.split("-");
     const copied = await copyCuaDriverBundle(
@@ -373,7 +397,13 @@ for (const target of targets) {
   await copyFile("LICENSE", join(folder, "BYCODA-LICENSE"));
   await writeFile(
     join(folder, "version.json"),
-    JSON.stringify({ version, nodeVersion, target, ...(buildIdentity ? { buildIdentity } : {}) }),
+    JSON.stringify({
+      version,
+      nodeVersion,
+      target,
+      ...(bykitTargets.has(target) ? { bykitVersion: BYKIT_PIN.version } : {}),
+      ...(buildIdentity ? { buildIdentity } : {}),
+    }),
   );
   if (buildIdentity)
     await writeFile(join(folder, "build-info.json"), JSON.stringify(buildIdentity));

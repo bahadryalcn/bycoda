@@ -189,3 +189,49 @@ it("takes the row's own account when the row switches provider", () => {
     providerAccountId: "personal",
   });
 });
+
+it("sends a steered row alone from a paused queue, as a steer", () => {
+  vi.useFakeTimers();
+  try {
+    const head = queued("codex", "gpt");
+    const picked = { ...queued("codex", "gpt"), id: "picked" };
+    const submit = vi.fn(() => true);
+    const sent = vi.fn();
+    function Probe() {
+      useQueuedSendDrain({
+        next: picked,
+        selected: true,
+        pageCacheOnly: false,
+        remoteDeleted: false,
+        authorityGeneration: undefined,
+        saved: { ...saved, settings: {} },
+        providers: ["codex"],
+        capabilities: [],
+        queue: {
+          pause: vi.fn(),
+          current: () => ({ status: "paused", messages: [head, picked] }),
+          sent,
+        },
+        leaseWait: { current: 0 },
+        submit,
+        requestChange: vi.fn(),
+        reportError: vi.fn(),
+      });
+      return null;
+    }
+    act(() => root.render(createElement(Probe)));
+    advance(0);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledWith(
+      picked.text,
+      picked.attachments,
+      { intent: undefined, followUpBehavior: "steer" },
+      false,
+      undefined,
+      "picked",
+    );
+    expect(sent).toHaveBeenCalledWith("picked");
+  } finally {
+    vi.useRealTimers();
+  }
+});

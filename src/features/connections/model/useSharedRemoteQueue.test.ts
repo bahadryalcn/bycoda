@@ -87,6 +87,20 @@ it("waits for durable ownership before confirming Resume", async () => {
   expect(saved.messages).toHaveLength(1);
 });
 
+it("confirms Resume when the released row was already sent before the read returned", async () => {
+  const request = mocks.request.getMockImplementation()!;
+  mocks.request.mockImplementation(async (...args) => {
+    const result = await request(...args);
+    // The drainer takes the only row as soon as the queue is active.
+    if (saved.status === "active") saved = { ...saved, messages: [], status: undefined, revision: saved.revision + 1 };
+    return result;
+  });
+  await act(async () => {
+    expect(await current.release()).toBe(true);
+  });
+  expect(saved.messages).toHaveLength(0);
+});
+
 it("retries a synchronization error and prepares the selected row on the same action", async () => {
   mocks.request.mockRejectedValueOnce(new Error("offline"));
   await act(async () => {

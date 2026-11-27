@@ -121,6 +121,19 @@ const fingerprint = async (cwd: string, path: string) => {
   }
 };
 
+/** Files read at once during a workspace scan; their results are still applied in order. */
+const SCAN_BATCH = 4;
+type Settled<T> = { value: T } | { error: unknown };
+const settled = <T>(work: Promise<T>): Promise<Settled<T>> =>
+  work.then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+const unwrap = <T>(result: Settled<T>): T => {
+  if ("error" in result) throw result.error;
+  return result.value;
+};
+
 /** Reverse only validated provider hunks; unchanged regions come from current bytes. */
 export function reverseProviderUpdate(current: string, diff: string): string {
   const lines = current.match(/[^\n]*\n|[^\n]+$/g) ?? [];
@@ -187,9 +200,34 @@ export function reverseProviderUpdate(current: string, diff: string): string {
   return before.join("");
 }
 
+/**
+ * Parent folders proven plain during one read-only workspace scan. A scan is one snapshot of the
+ * checkout; edits, claims and reverts never pass one and check every component each time.
+ */
+type ScanFolders = Map<string, Promise<void>>;
+/** The parent-folder part of `filePath`: no link, a directory, and not a nested repository. */
+async function plainFolder(folder: string) {
+  const meta = await lstat(folder).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (meta?.isSymbolicLink()) throw new Error("Linked paths cannot be reverted");
+  if (meta && !meta.isDirectory()) throw new Error("Parent is not a directory");
+  if (
+    meta &&
+    (await lstat(join(folder, ".git")).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      },
+    ))
+  )
+    throw new Error("Nested repositories cannot be reverted");
+}
 /** Reject every symlink component (including links within the checkout), nested
  * repositories, and hard links. Restoring an alias must never modify another path. */
-async function filePath(cwd: string, path: string) {
+async function filePath(cwd: string, path: string, scan?: ScanFolders) {
   const abs = await safeGitPath(cwd, path);
   const parts = relative(cwd, abs).split(/[\\/]/);
   if (
@@ -199,6 +237,17 @@ async function filePath(cwd: string, path: string) {
   let cursor = cwd;
   for (let i = 0; i < parts.length; i++) {
     cursor = join(cursor, parts[i]);
+    if (scan && i < parts.length - 1) {
+      // Thousands of files share a few folders: check each folder once per scan.
+      let checked = scan.get(cursor);
+      if (!checked) {
+        checked = plainFolder(cursor);
+        void checked.catch(() => {});
+        scan.set(cursor, checked);
+      }
+      await checked;
+      continue;
+    }
     const meta = await lstat(cursor).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return undefined;
       throw error;
@@ -221,8 +270,8 @@ async function filePath(cwd: string, path: string) {
   }
   return abs;
 }
-async function image(cwd: string, path: string): Promise<Image> {
-  const abs = await filePath(cwd, path);
+async function image(cwd: string, path: string, scan?: ScanFolders): Promise<Image> {
+  const abs = await filePath(cwd, path, scan);
   try {
     const meta = await lstat(abs);
     if (!meta.isFile() || meta.size > MAX_FILE)
@@ -608,7 +657,18 @@ export class SessionFileRevert {
       return this.withoutHostOwned(cwd, paths);
     }
   }
-  async begin(session: string, cwd: string, turnId: string, userBlockId = turnId) {
+  /**
+   * `abandoned` reports a turn that was stopped while its baseline is still being read. The scan
+   * ends there and the baseline counts as incomplete, so a cancelled turn is not held behind a
+   * read of every workspace file.
+   */
+  async begin(
+    session: string,
+    cwd: string,
+    turnId: string,
+    userBlockId = turnId,
+    abandoned?: () => boolean,
+  ) {
     validId(turnId);
     // Transcript block IDs are opaque RPC identifiers, never path components.
     IdentifierSchema.parse(userBlockId);
@@ -642,19 +702,34 @@ export class SessionFileRevert {
     };
     this.active.set(session, active);
     let size = 0;
+    const scan: ScanFolders = new Map();
     try {
-      for (const path of await this.paths(cwd)) {
-        try {
-          const value = await image(cwd, path);
-          size += value?.raw.length ?? 0;
-          if (size > this.budget) {
-            active.excluded.set(path, await fingerprint(cwd, path));
-            continue;
-          }
-          active.baseline.set(path, value);
-        } catch {
-          active.excluded.set(path, await fingerprint(cwd, path));
+      const paths = await this.paths(cwd);
+      for (let start = 0; start < paths.length; start += SCAN_BATCH) {
+        if (abandoned?.()) {
+          active.complete = false;
+          break;
         }
+        const batch = paths.slice(start, start + SCAN_BATCH);
+        // Once the budget is spent every later file is excluded whatever it holds: skip its read.
+        const overBudget = size > this.budget;
+        const reads = batch.map((path) =>
+          overBudget ? undefined : settled(image(cwd, path, scan)),
+        );
+        const marks = new Map<string, Promise<string>>();
+        for (let i = 0; i < batch.length; i++) {
+          const path = batch[i];
+          const read = await reads[i];
+          if (read && "value" in read) {
+            size += read.value?.raw.length ?? 0;
+            if (size <= this.budget) {
+              active.baseline.set(path, read.value);
+              continue;
+            }
+          }
+          marks.set(path, fingerprint(cwd, path));
+        }
+        for (const [path, mark] of marks) active.excluded.set(path, await mark);
       }
     } catch {
       active.complete = false;
@@ -797,7 +872,12 @@ export class SessionFileRevert {
       }
     }
   }
-  async finish(session: string, cwd: string, turnId: string, shared = false) {
+  /**
+   * `untouched` is the caller's proof that this turn never reached its provider. With no edit
+   * claimed or prepared either, the turn changed nothing: it is recorded empty without listing or
+   * reading the workspace again, so stopping it is not held behind a second full scan.
+   */
+  async finish(session: string, cwd: string, turnId: string, shared = false, untouched = false) {
     const active = this.active.get(session);
     if (!active || active.turn.id !== turnId || active.cwd !== (await realpath(cwd))) return;
     try {
@@ -805,6 +885,13 @@ export class SessionFileRevert {
       const position = index.turns.findIndex((entry) => entry.id === turnId);
       if (position < 0) return;
       const turn = await this.readTurn(session, index.turns[position]);
+      if (untouched && !active.claimed.size && !active.prepared.size && !active.proofs.size) {
+        delete turn.unavailable;
+        const entries = [...index.turns];
+        entries[position] = await this.storeTurn(session, turn);
+        await this.writeIndex(session, active.cwd, entries, index.turns);
+        return { files: turn.files, shared };
+      }
       const discovered = shared ? new Set<string>() : new Set(await this.paths(active.cwd));
       const candidates = shared
         ? [...new Set([...active.claimed.keys(), ...active.proofs.keys()])]
@@ -817,17 +904,28 @@ export class SessionFileRevert {
               ...discovered,
             ]),
           ];
-      for (const path of candidates) {
+      const scan: ScanFolders = new Map();
+      // The same checks as before, read a few files ahead: results are still applied in order.
+      const marks = new Map<string, Promise<string>>();
+      const images = new Map<string, Promise<Settled<Image>>>();
+      for (let index = 0; index < candidates.length; index++) {
+        const path = candidates[index];
+        if (index % SCAN_BATCH === 0) {
+          marks.clear();
+          images.clear();
+          for (const next of candidates.slice(index, index + SCAN_BATCH)) {
+            if (active.proofs.has(next) || active.claimed.has(next)) continue;
+            if (active.excluded.has(next)) marks.set(next, fingerprint(active.cwd, next));
+            else images.set(next, settled(image(active.cwd, next, scan)));
+          }
+        }
         const proof = active.proofs.get(path);
         if (proof) {
           if (!same(proof.before, proof.after) || proof.conflict) turn.files[path] = proof;
           continue;
         }
         if (active.excluded.has(path)) {
-          if (
-            active.claimed.has(path) ||
-            active.excluded.get(path) !== (await fingerprint(active.cwd, path))
-          )
+          if (active.claimed.has(path) || active.excluded.get(path) !== (await marks.get(path)))
             active.complete = false;
           continue;
         }
@@ -839,7 +937,7 @@ export class SessionFileRevert {
         try {
           const after = active.claimed.has(path)
             ? active.claimed.get(path)!
-            : await image(active.cwd, path);
+            : unwrap(await images.get(path)!);
           if (!same(before, after))
             turn.files[path] = {
               before,

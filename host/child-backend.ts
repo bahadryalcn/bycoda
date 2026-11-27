@@ -9,6 +9,7 @@ import {
   type SessionToolGroup,
   type SessionToolCapability,
 } from "./sessions/session-tools-relay";
+import { withBundledBykit } from "./bykit/bykit-path";
 import { authorizeSocialAcpFrame } from "./social/social-tools";
 import { authorizeRuntimeLogsAcpFrame, type RuntimeLogAccess } from "./execution/runtime-log-tools";
 import { authorizeConversationAcpFrame } from "./conversation/conversation-tools";
@@ -870,6 +871,8 @@ export class HostChildBackend implements ChildBackend {
           )
         )
           delete env[key];
+      // Agent sessions run the bundled bykit ahead of any user-installed one; terminals and the user's shell are untouched.
+      withBundledBykit(env);
       // A management or utility child has no stored conversation to grant against:
       // it gets the same stripped environment and no issuance.
       const sessionless = args.purpose === "management" || args.purpose === "utility";

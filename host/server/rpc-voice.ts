@@ -1,4 +1,10 @@
-import { createRealtimeSecret, createVoiceClientSecret, realtimeCredential } from "../voice/voice";
+import {
+  createRealtimeSecret,
+  createVoiceClientSecret,
+  realtimeCredential,
+  RealtimeSignInExpiredError,
+  type RealtimeProvider,
+} from "../voice/voice";
 import { DictationCleanupRuns } from "../voice/voice-dictation-runs";
 import { processVoiceTranscript } from "../voice/voice-dictation-process";
 import { inspectVoiceRuntime } from "../voice/voice-runtime";
@@ -35,14 +41,18 @@ export async function handleVoiceRpc(
     case "voice.cloud.transcribe":
     case "voice.cloud.models":
       // Sign-ins and keys stay on this computer. Paired owner devices can use
-      // transcription, status and the public transcription-model catalog.
+      // transcription, status, the public transcription-model catalog and the opt-in
+      // dictation cleanup (a Codex text turn on this computer; runs are scoped to the
+      // device's own token, so it can cancel only its own).
       if (
         request.request.headers.origin ||
         !(
           request.thisComputer ||
           ((request.input.method === "voice.cloud.transcribe" ||
             request.input.method === "voice.cloud.status" ||
-            request.input.method === "voice.cloud.models") &&
+            request.input.method === "voice.cloud.models" ||
+            request.input.method === "voice.dictation.process" ||
+            request.input.method === "voice.dictation.cancel") &&
             (await request.domainContext.authorized()))
         )
       )
@@ -192,15 +202,26 @@ export async function handleVoiceRpc(
 }
 
 async function transcriptionStatus(cloud: ServerBindings["voiceCloud"]) {
-  const [status, { openai, xai }] = await Promise.all([cloud.status(), realtimeSignIns()]);
-  return { ...status, openai, xai };
+  const [status, signIns] = await Promise.all([cloud.status(), realtimeSignIns()]);
+  return { ...status, ...signIns };
 }
 
-/** Whether this computer has a Grok Build / Codex sign-in (or env key); never the credential. */
+export type RealtimeSignInState = "ready" | "missing" | "expired";
+
+/** A Grok Build token that ran out is told apart from no sign-in: the owner fixes them differently. */
+async function signInState(provider: RealtimeProvider): Promise<RealtimeSignInState> {
+  try {
+    return (await realtimeCredential(provider)) ? "ready" : "missing";
+  } catch (error) {
+    return error instanceof RealtimeSignInExpiredError ? "expired" : "missing";
+  }
+}
+
+/**
+ * Whether this computer has a Grok Build / Codex sign-in (or env key); never the credential.
+ * `signIn` says why one is unusable, so a phone can name the exact step on the computer.
+ */
 export async function realtimeSignIns() {
-  const [openai, xai] = await Promise.all([
-    realtimeCredential("openai").catch(() => undefined),
-    realtimeCredential("xai").catch(() => undefined),
-  ]);
-  return { openai: Boolean(openai), xai: Boolean(xai) };
+  const [openai, xai] = await Promise.all([signInState("openai"), signInState("xai")]);
+  return { openai: openai === "ready", xai: xai === "ready", signIn: { openai, xai } };
 }

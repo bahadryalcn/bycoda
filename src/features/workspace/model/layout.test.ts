@@ -25,6 +25,7 @@ import {
   newTab,
   newTerminalFile,
   newTerminalWorkspaceTab,
+  restartTerminalTabInProject,
   nextTerminalTitle,
   resetTabToSession,
   isolateTerminalPanes,
@@ -696,5 +697,20 @@ describe("placePane", () => {
     const tree = leaf("a");
     expect(placePane(tree, "b", "missing", "right")).toBe(tree);
     expect(placePane(tree, "a", "a", "right")).toBe(tree);
+  });
+});
+
+describe("restartTerminalTabInProject", () => {
+  it("replaces a terminal whose worktree is gone with one in its project folder", () => {
+    const gone = newTerminalFile("/worktrees/repo-wt", "repo-wt", "/repo");
+    const tab = newTerminalWorkspaceTab(gone);
+    const next = restartTerminalTabInProject(tab, gone.id);
+    const [pane] = next.terminalPanes ?? [];
+    expect(pane.files).toHaveLength(1);
+    expect(pane.files[0]).toMatchObject({ cwd: "/repo", path: "repo", terminal: true });
+    expect(pane.files[0].id).not.toBe(gone.id);
+    expect(pane.activeFileId).toBe(pane.files[0].id);
+    // The replacement has no other folder to fall back to, so a second refusal stops here.
+    expect(restartTerminalTabInProject(next, pane.files[0].id)).toBe(next);
   });
 });

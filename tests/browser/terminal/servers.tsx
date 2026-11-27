@@ -529,6 +529,27 @@ Object.assign(window, {
           summary: { host: endpoint.host, user: endpoint.user, port: endpoint.port, jumpHosts: [] },
         };
       }
+      // A synthetic remote shell echo: the passive list reads the echoed prefix
+      // from the screen, exactly as it does with a real SSH shell.
+      if (params.has("autocompleteFixture") && input.id === "autocomplete-fixture") {
+        const echo = (text: string) =>
+          queueMicrotask(() =>
+            emitFixtureEvent("pty-data", {
+              id: input.id,
+              data: btoa(String.fromCharCode(...new TextEncoder().encode(text))),
+            }),
+          );
+        if (command === "ssh_terminal_quick_spawn") echo("$ ");
+        if (command === "pty_write") {
+          const data = String(input.data);
+          if (data === "\x7f") echo("\b \b");
+          else if (data === "\r") echo("\r\n$ ");
+          // oxlint-disable-next-line no-control-regex -- the fixture echoes printable text only
+          else if (!/[\x00-\x1f\x7f]/.test(data)) echo(data);
+        }
+        if (command === "ssh_terminal_catalog_accept")
+          echo(String(input.value).slice(String(input.prefix).length));
+      }
       if (params.has("autocompleteFixture") && command === "ssh_terminal_suggestions_request") {
         const requestId = `synthetic-request-${++suggestionSequence}`;
         // Synthetic semantic shell transport only. The browser fixture never invokes SSH.

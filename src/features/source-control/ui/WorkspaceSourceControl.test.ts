@@ -441,10 +441,12 @@ it("has no tabs and no worktree selector in the overview", async () => {
   expect(host.querySelector("select")).toBeNull();
   expect(host.querySelector('[role="tab"]')).toBeNull();
 });
-it("lists only worktrees with uncommitted changes as same-level sections, session first", async () => {
+const everyTree = ["/t/mine", "/t/work", "/repo", "/t/idle", "/t/idle2"];
+const expandedOf = (path: string) =>
+  text(path).querySelector("button")!.getAttribute("aria-expanded");
+it("lists every worktree as same-level sections: changed first (session first), then clean", async () => {
   await renderCheckouts();
-  // The clean project folder and the clean worktrees live in the header picker, not here.
-  expect(mounted()).toEqual(["/t/mine", "/t/work"]);
+  expect(mounted()).toEqual(everyTree);
   // Same level: every section sits directly in the overview, with no indent wrapper.
   for (const section of host.querySelectorAll("section")) {
     expect(section.parentElement!.parentElement).toBe(
@@ -453,41 +455,47 @@ it("lists only worktrees with uncommitted changes as same-level sections, sessio
   }
   expect(host.textContent).not.toContain("With changes");
   expect(host.textContent).not.toContain("Clean");
-  expect(host.textContent).not.toContain("idle");
 });
-it("opens the first section and leaves the others one click away", async () => {
+it("opens the worktrees with changes and collapses the clean ones", async () => {
   await renderCheckouts();
-  expect(text("/t/mine").querySelector("button")!.getAttribute("aria-expanded")).toBe("true");
-  expect(text("/t/work").querySelector("button")!.getAttribute("aria-expanded")).toBe("false");
-  await act(async () => text("/t/work").querySelector("button")!.click());
-  expect(text("/t/work").querySelector("button")!.getAttribute("aria-expanded")).toBe("true");
+  expect(expandedOf("/t/mine")).toBe("true");
+  expect(expandedOf("/t/work")).toBe("true");
+  expect(expandedOf("/repo")).toBe("false");
+  expect(expandedOf("/t/idle")).toBe("false");
+  await act(async () => text("/t/idle").querySelector("button")!.click());
+  expect(expandedOf("/t/idle")).toBe("true");
 });
-it("runs child-repository discovery only for the listed sections", async () => {
+it("runs child-repository discovery only for the open sections", async () => {
   await renderCheckouts();
   expect(discover).toHaveBeenLastCalledWith(["/t/mine", "/t/work"], true, true);
   for (const call of discover.mock.calls) expect(call[0]).not.toContain("/t/idle");
+  await act(async () => text("/t/idle").querySelector("button")!.click());
+  expect(discover).toHaveBeenLastCalledWith(["/t/mine", "/t/work", "/t/idle"], true, true);
 });
-it("shows the session worktree when no worktree has uncommitted changes", async () => {
+it("opens only the session worktree when no worktree has uncommitted changes", async () => {
   await renderCheckouts("/t/mine/src", cleanTrees);
-  expect(mounted()).toEqual(["/t/mine"]);
+  expect(mounted()).toEqual(["/t/mine", "/repo", "/t/work", "/t/idle", "/t/idle2"]);
+  expect(expandedOf("/t/mine")).toBe("true");
+  expect(expandedOf("/repo")).toBe("false");
 });
-it("never counts an unknown state as changes: such a worktree is not a section", async () => {
+it("never counts an unknown state as changes: such a worktree stays collapsed", async () => {
   const unknown = Object.fromEntries(
     Object.entries(trees).map(([path, item]) => [path, { ...item, dirty: null }]),
   );
   await renderCheckouts("/t/mine/src", unknown);
-  expect(mounted()).toEqual(["/t/mine"]);
+  expect(mounted()).toEqual(["/t/mine", "/repo", "/t/work", "/t/idle", "/t/idle2"]);
+  expect(expandedOf("/t/work")).toBe("false");
 });
 it("keeps expansion and scroll across remounts of the same session", async () => {
   await renderCheckouts();
-  await act(async () => text("/t/work").querySelector("button")!.click());
+  await act(async () => text("/t/idle").querySelector("button")!.click());
   const overview = host.querySelector<HTMLElement>("[data-checkout-overview]")!;
   overview.scrollTop = 120;
   overview.dispatchEvent(new Event("scroll"));
   await renderCheckouts(undefined, trees, "/t/idle");
   expect(mounted()).toEqual(["/t/idle"]);
   await renderCheckouts();
-  expect(text("/t/work").querySelector("button")!.getAttribute("aria-expanded")).toBe("true");
+  expect(expandedOf("/t/idle")).toBe("true");
   expect(host.querySelector<HTMLElement>("[data-checkout-overview]")!.scrollTop).toBe(120);
 });
 it("shows only the focused worktree as one panel with no overview", async () => {
@@ -557,16 +565,17 @@ it("offers the single-repository toggle only when there are several sections", a
 it("falls back to the overview when the focused worktree left the list", async () => {
   await renderCheckouts("/t/mine/src", trees, "/t/gone");
   expect(host.querySelector("[data-checkout-overview]")).not.toBeNull();
-  expect(mounted()).toEqual(["/t/mine", "/t/work"]);
+  expect(mounted()).toEqual(everyTree);
 });
 it("falls back to the project folder outside every worktree", async () => {
   await renderCheckouts("/elsewhere", cleanTrees);
-  expect(mounted()).toEqual(["/repo"]);
+  expect(mounted()[0]).toBe("/repo");
+  expect(expandedOf("/repo")).toBe("true");
 });
 it("drops the retired per-session checkout choices once", async () => {
   localStorage.setItem("bycoda.sourceControl.checkout.v1:/t/mine", "/t/idle");
   await renderCheckouts();
   expect(localStorage.getItem("bycoda.sourceControl.checkout.v1:/t/mine")).toBeNull();
   // The stored choice no longer retargets the panel.
-  expect(mounted()).toEqual(["/t/mine", "/t/work"]);
+  expect(mounted()).toEqual(everyTree);
 });

@@ -94,13 +94,16 @@ test.beforeEach(async ({ page }) => {
                 version: availableVersion,
                 body: location.search.includes("long-notes")
                   ? [
+                      "### Added\n",
                       "- The model picker keeps its selection when the list changes size.",
                       "- Escape closes the Access or Mode menu without closing the model panel.",
                       "- The app recovers when the Host closes during startup.",
+                      "\n### Changed\n",
                       "- Activity labels keep their separators and ellipses.",
-                      "- On Windows, the app relaunches if the WebView2 browser process exits.",
                       "- Reconnecting restores the selected workspace and its open tabs.",
                       "- Draft messages stay in the composer when switching conversations.",
+                      "\n### Fixed\n",
+                      "- On Windows, the app relaunches if the WebView2 browser process exits.",
                       "- Keyboard focus returns to the sidebar after closing a dialog.",
                     ].join("\n")
                   : "Fixture release notes",
@@ -469,13 +472,13 @@ async function openUpdatePrompt(page: Page) {
   };
 }
 
-test("update dialog shows the start of the notes and a high-contrast download icon", async ({
+test("update dialog keeps a fixed height and visible actions while release notes scroll", async ({
   page,
 }) => {
   await page.addInitScript((version) => {
     localStorage.removeItem(`bycoda.githubStarPrompt.dismissed.${version}`);
   }, appVersion);
-  const capture = "temp/verification/update-dialog-refined";
+  const capture = "temp/verification/update-dialog-release-notes";
   mkdirSync(capture, { recursive: true });
   writeFileSync(
     `${capture}/README.md`,
@@ -490,10 +493,16 @@ test("update dialog shows the start of the notes and a high-contrast download ic
         theme === "light",
       );
       const { dialog, github } = await openUpdatePrompt(page);
-      await dialog.screenshot({ path: `${capture}/${theme}-${width}.png` });
       const install = dialog.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
+      const reminder = dialog.getByRole("button", { name: "Remind me tomorrow" });
+      const notesToggle = dialog.locator("summary").filter({ hasText: "Release notes" });
+      const body = dialog.locator('[data-modal-scroll="auto"]');
+      const bounds = (await dialog.boundingBox())!;
+      expect(bounds.width).toBe(560);
+      expect(bounds.height).toBe(476);
       await expect(install).toBeInViewport();
       await expect(github).toBeInViewport();
+      await expect(dialog.getByRole("heading", { name: "Added", level: 3 })).toBeInViewport();
       await expect(
         dialog.getByText("The model picker keeps its selection when the list changes size.", {
           exact: true,
@@ -504,6 +513,14 @@ test("update dialog shows the start of the notes and a high-contrast download ic
       expect(await icon.evaluate((element) => getComputedStyle(element).stroke)).toBe(
         await install.evaluate((element) => getComputedStyle(element).color),
       );
+      await dialog.screenshot({ path: `${capture}/${theme}-${width}.png` });
+      await body.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+      await expect(dialog.getByRole("heading", { name: "Fixed", level: 3 })).toBeInViewport();
+      await expect(install).toBeInViewport();
+      await expect(reminder).toBeInViewport();
+      await notesToggle.click();
+      await expect(dialog.getByRole("heading", { name: "Added", level: 3 })).toBeHidden();
+      expect((await dialog.boundingBox())?.height).toBe(bounds.height);
     }
   }
 });
