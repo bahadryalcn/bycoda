@@ -355,7 +355,7 @@ for (const target of targets) {
       });
   }
   if (bykitTargets.has(target)) {
-    const [platform, arch] = target.split("-");
+    const [platform] = target.split("-");
     const bykit = await copyBykit({ target, folder, cacheRoot: desktopHelperCache });
     if (platform === "darwin" && process.platform === "darwin" && macosSigningIdentity)
       await signStandaloneExecutable(bykit.path, { platform, identity: macosSigningIdentity });

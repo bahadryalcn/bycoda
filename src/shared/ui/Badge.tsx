@@ -24,6 +24,8 @@ export type BadgeProps = Omit<ArcBadgeProps, "size" | "tone"> & {
   identityColor?: string;
   /** Round 28px icon container for a decorative activity glyph. */
   shape?: "icon";
+  /** A count drawn as a solid accent pill, for a count overlaid on an icon (a collapsed rail). */
+  solid?: boolean;
   minWidth?: CSSProperties["minInlineSize"];
   /** One-line text label: text that does not fit ends in an ellipsis and the badge shrinks
    *  inside its row (it needs a bounded width: a flex or grid item, or `max-w-*`). Applies to
@@ -60,6 +62,7 @@ export function Badge({
   style,
   size = "md",
   shape,
+  solid = false,
   max,
   variant,
   tone,
@@ -109,6 +112,7 @@ export function Badge({
         tone === "skill" && variant !== "count" && styles.skill,
         size === "xs" && styles.xs,
         shape === "icon" && styles.iconShape,
+        solid && variant === "count" && styles.solid,
         leading && styles.leading,
         identityColor && styles.identity,
         onRemove && styles.chip,

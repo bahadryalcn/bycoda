@@ -1048,19 +1048,16 @@ function SidebarComponent({
   const workingSessionsRailBadge =
     workingSessionCount > 0 ? (
       <>
-        {/* Count badges are text-only, so the pill fill lives on this wrapper. */}
-        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--ui-tone-accent-solid)] px-1">
-          <Badge
-            variant="count"
-            size="xs"
-            tone="accent"
-            aria-hidden="true"
-            data-workspace-working-count
-            style={{ "--badge-foreground": "var(--ui-tone-accent-on-solid)" } as CSSProperties}
-          >
-            {workingSessionCount}
-          </Badge>
-        </span>
+        <Badge
+          variant="count"
+          size="xs"
+          tone="accent"
+          solid
+          aria-hidden="true"
+          data-workspace-working-count
+        >
+          {workingSessionCount}
+        </Badge>
         <LiveText
           className="sr-only"
           text={
@@ -6070,7 +6067,9 @@ function CompactRailAction({
     <>
       {dot ? <StatusDot label={label} aria-hidden className="absolute right-1 top-1" /> : null}
       {badge ? (
-        <span className="pointer-events-none absolute -right-1.5 -top-1.5 [&>span]:ml-0">{badge}</span>
+        <span className="pointer-events-none absolute -right-1.5 -top-1.5 [&>span]:ml-0">
+          {badge}
+        </span>
       ) : null}
     </>
   );

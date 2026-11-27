@@ -72,8 +72,8 @@ it("puts the bundled directory ahead of the user's PATH", () => {
 
 it("keeps Windows Path spelling and merges duplicates case-insensitively", () => {
   const folder = hostFolder(true, "bykit.exe");
-  const env = withBundledBykit({ Path: "C:\Windows", PATH: "C:\Other" }, folder, "win32");
-  expect(env.Path).toBe(`${join(folder, "bin")};C:\Windows`);
+  const env = withBundledBykit({ Path: "C:\\Windows", PATH: "C:\\Other" }, folder, "win32");
+  expect(env.Path).toBe(`${join(folder, "bin")};C:\\Windows`);
   expect(Object.keys(env).filter((key) => key.toUpperCase() === "PATH")).toEqual(["Path"]);
 });
 

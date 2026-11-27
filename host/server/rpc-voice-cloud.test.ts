@@ -90,8 +90,12 @@ it("keeps cloud credentials and setup methods local even for an owner device", a
 
 it("runs the opt-in dictation cleanup for the paired owner device, cancellable by its own token only", async () => {
   const runId = "4f6b1c2e-8a3d-4e5f-9a1b-2c3d4e5f6a7b";
-  const run = (method: string, tokenHash: string, params: Record<string, unknown>, options = { owner: true } as { owner: boolean; origin?: string }) =>
-    ({ ...call(method, options), tokenHash, params }) as Parameters<typeof handleVoiceRpc>[1];
+  const run = (
+    method: string,
+    tokenHash: string,
+    params: Record<string, unknown>,
+    options = { owner: true } as { owner: boolean; origin?: string },
+  ) => ({ ...call(method, options), tokenHash, params }) as Parameters<typeof handleVoiceRpc>[1];
   const phone = run("voice.dictation.process", "phone-token", { runId, text: "merhaba dunya" });
   await handleVoiceRpc(dependencies, phone);
   expect(phone.result).toEqual({ text: "Cleaned: merhaba dunya" });
@@ -105,7 +109,10 @@ it("runs the opt-in dictation cleanup for the paired owner device, cancellable b
   expect(cancel.result).toEqual({ cancelled: true });
   // The device's cancelled run stays refused, while another token's run with the same id is unaffected.
   await expect(
-    handleVoiceRpc(dependencies, run("voice.dictation.process", "phone-token", { runId, text: "b" })),
+    handleVoiceRpc(
+      dependencies,
+      run("voice.dictation.process", "phone-token", { runId, text: "b" }),
+    ),
   ).rejects.toThrow("cancelled");
   const desktop = run("voice.dictation.process", "desktop-token", { runId, text: "c" });
   await handleVoiceRpc(dependencies, desktop);

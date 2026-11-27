@@ -153,18 +153,18 @@ behavior changes. After editing `.agents/skills/`, run
   script is allowed only when no bykit command fits; name the gap in your report.
   Output is paged: narrow by path first, then `--page N`; `--all` only when needed.
 
-  | Task | Command |
-  | --- | --- |
-  | Usages, repo-wide scans, before a bulk change | `bykit find PATTERN [PATHS] [--glob G] [--files]` |
-  | Big file: outline, declaration, line range | `bykit read F --outline, --symbol NAME or --lines A:B` |
-  | Many edits across files, or a new file | `bykit edit` with a raw patch on stdin (`bykit edit --help`) |
-  | Rename across files (dry run, then `--apply`) | `bykit replace OLD NEW PATHS [--regex]` |
+  | Task                                             | Command                                                              |
+  | ------------------------------------------------ | -------------------------------------------------------------------- |
+  | Usages, repo-wide scans, before a bulk change    | `bykit find PATTERN [PATHS] [--glob G] [--files]`                    |
+  | Big file: outline, declaration, line range       | `bykit read F --outline, --symbol NAME or --lines A:B`               |
+  | Many edits across files, or a new file           | `bykit edit` with a raw patch on stdin (`bykit edit --help`)         |
+  | Rename across files (dry run, then `--apply`)    | `bykit replace OLD NEW PATHS [--regex]`                              |
   | Locale keys: which files hold, which are missing | `bykit json DIR --has KEY` / `bykit json a.json --missing-in b.json` |
-  | JSON query or edit | `bykit json F [QUERY] [--set path=value]` |
-  | SQLite (read-only) | `bykit sql DB ["SELECT ..."] [--schema]` |
-  | Long test, build or log output | `bykit run -- CMD` |
-  | Long diff | `bykit diff` |
-  | PNG inspect, compare, crop | `bykit shot A.png [--compare B.png --out D.png] [--crop x,y,w,h]` |
+  | JSON query or edit                               | `bykit json F [QUERY] [--set path=value]`                            |
+  | SQLite (read-only)                               | `bykit sql DB ["SELECT ..."] [--schema]`                             |
+  | Long test, build or log output                   | `bykit run -- CMD`                                                   |
+  | Long diff                                        | `bykit diff`                                                         |
+  | PNG inspect, compare, crop                       | `bykit shot A.png [--compare B.png --out D.png] [--crop x,y,w,h]`    |
 
 - A task ending, a review or a draft commit does not trigger a test run. Use fast
   types for the changed project when useful and review the diff. Run a focused
