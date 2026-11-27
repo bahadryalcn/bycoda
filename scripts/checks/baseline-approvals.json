@@ -1,6 +1,20 @@
 {
   "approvals": [
     {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "spacing-step",
+      "from": 6,
+      "to": 7,
+      "reason": "Owner-approved: the Pinned/Settled session list hairline sits centred in the 2px row gap (top: -1.5px)."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "surface-style",
+      "from": 26,
+      "to": 27,
+      "reason": "Owner-approved: the Pinned/Settled session list hairline is a ::before border inside the virtualized row, where a Divider element cannot sit."
+    },
+    {
       "baseline": "invariants-baseline.json",
       "rule": "rust-sync-command-blocking-work",
       "from": 0,

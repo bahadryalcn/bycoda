@@ -663,6 +663,11 @@ it("rechecks owner Stop after command acceptance and before the actual provider 
   release.resolve();
   expect((await pending).operation?.delivery).toBe("unknown");
   expect(f.provider.answer).not.toHaveBeenCalled();
-  expect((await f.store.session(f.sessionId)).runId).toBe(f.first.runId);
-  expect(assistantQuestionToken(await f.store.session(f.sessionId))).toBe(command.questionToken);
+  // The owner Stop ends the turn that asked: its question closes with that turn instead of
+  // being answered, and no new run takes its place.
+  await vi.waitFor(async () => expect((await f.store.session(f.sessionId)).status).toBe("idle"));
+  const settled = await f.store.session(f.sessionId);
+  expect(settled.runId).toBe(f.first.runId);
+  expect(assistantQuestionToken(settled)).toBeUndefined();
+  expect(f.provider.answer).not.toHaveBeenCalled();
 });

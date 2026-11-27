@@ -9,7 +9,9 @@
       "theme-palette-literal": 1
     },
     "src/app/shell/sessionList.css": {
-      "shared-internal-selector": 2
+      "shared-internal-selector": 2,
+      "spacing-step": 1,
+      "surface-style": 1
     },
     "src/app/shell/toolNavigation.css": {
       "shared-internal-selector": 4
@@ -366,7 +368,7 @@
       "theme-palette-literal": 1
     },
     "src/features/terminal/runtime/terminalTheme.ts": {
-      "theme-palette-literal": 37
+      "theme-palette-literal": 35
     },
     "src/features/terminal/ui/RemoteShellSuggestions.tsx": {
       "aria-label-without-role": 1

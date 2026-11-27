@@ -2972,9 +2972,7 @@ function ConnectedRemoteSession({
     working,
     changing: !!changes,
   });
-  const steered = steeredId
-    ? queue.queue.messages.find((row) => row.id === steeredId)
-    : undefined;
+  const steered = steeredId ? queue.queue.messages.find((row) => row.id === steeredId) : undefined;
   const steeredReady =
     !!steered &&
     queue.loaded &&
