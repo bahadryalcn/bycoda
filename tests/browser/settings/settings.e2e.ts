@@ -164,31 +164,24 @@ for (const theme of ["dark", "light"])
         path: info.outputPath(`appearance-ai-dialog-${theme}-${width}.png`),
         animations: "disabled",
       });
-      await dialog.getByRole("button", { name: "Minimize", exact: true }).click();
-      const dock = page.getByRole("group", { name: "Generation", exact: true });
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
       await expect(dialog).toHaveCount(0);
-      await expect(dock.getByText("1 running", { exact: true })).toBeVisible();
-      expect((await dock.boundingBox())!.y).toBeGreaterThan(780);
+      await expect(launcher).toHaveAttribute("aria-description", "1 running");
       expect((await colorScheme.boundingBox())!.y).toBeCloseTo(schemeY!, 0);
       await openAppearanceTab(page, "Background");
-      await expect(dock.getByText("1 running", { exact: true })).toBeVisible();
+      await expect(launcher).toHaveAttribute("aria-description", "1 running");
       await openAppearanceTab(page, "Theme");
       await page.screenshot({
         path: info.outputPath(`appearance-ai-minimized-${theme}-${width}.png`),
         animations: "disabled",
       });
-      await dock.getByRole("button", { name: "Dismiss", exact: true }).click();
-      await expect(dock).toHaveCount(0);
-      await expect(launcher).toHaveAttribute("aria-description", "1 running");
       await launcher.click();
-      await dialog.getByRole("button", { name: "Minimize", exact: true }).click();
-      await dock.getByRole("button", { name: "Restore" }).click();
       await expect(dialog.getByRole("textbox", { name: "Describe a theme" })).toHaveValue(
         "Midnight blue with mountain silhouettes",
       );
       await expect(activity.getByRole("button", { name: "Cancel Alpine" })).toBeVisible();
       await dialog.getByRole("button", { name: "Close", exact: true }).click();
-      await expect(dock).toHaveCount(0);
+      await expect(dialog).toHaveCount(0);
       await expect(launcher).toHaveAttribute("aria-description", "1 running");
       await page.evaluate(() =>
         window.dispatchEvent(new Event("fixture-complete-appearance-drawings")),
@@ -261,7 +254,7 @@ for (const theme of ["dark", "light"])
       await expect.poll(async () => (await stored()).angle).not.toBe(initial);
       const angle = (await stored()).angle;
       await type.getByRole("radio", { name: "Radial", exact: true }).click();
-      await expect(dial).toHaveAttribute("aria-disabled", "true");
+      await expect(dial).toHaveCount(0);
       expect((await stored()).angle).toBe(angle);
       await type.getByRole("radio", { name: "Linear", exact: true }).click();
       await group.getByRole("button", { name: "Color 1", exact: true }).click();
@@ -434,6 +427,10 @@ for (const theme of ["light", "dark"])
       const duration = general
         .locator('[data-setting-id="keep-awake-duration"]')
         .getByRole("button", { name: /^Stay awake after an agent ends:/ });
+      // Keeping the machine awake is on by default; turning it off disables its dependents.
+      await expect(awake).toBeChecked();
+      await expect(screen).toBeEnabled();
+      await awake.click();
       await expect(screen).toBeDisabled();
       await expect(duration).toBeDisabled();
       await awake.focus();
@@ -468,7 +465,7 @@ for (const theme of ["light", "dark"])
       ).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(restoreDefaults).toBeFocused();
-      await expect(general.locator(".general-about-value")).toBeVisible();
+      await expect(general.locator(".general-version")).toBeVisible();
       const overflows = await general.evaluate((root) =>
         [
           ...root.querySelectorAll(
@@ -747,7 +744,12 @@ for (const theme of ["light", "dark"])
       await expect(recorder).toContainText("Q");
       await recorder.click();
       await page.keyboard.press("Control+k");
-      await expect(page.getByRole("alert")).toContainText("Already used");
+      const conflict = page.getByRole("alert");
+      await expect(conflict).toContainText("Could not save shortcut");
+      // The conflicting owner is the cause, which opens from the alert's Details action.
+      await conflict.getByRole("button", { name: "Details" }).click();
+      await expect(page.getByText(/Already used by/).first()).toBeVisible();
+      await page.keyboard.press("Escape");
       await expect(recorder).toContainText("Q");
       const recorderBounds = (await recorder.boundingBox())!;
       const resetBounds = (await page
@@ -816,10 +818,8 @@ for (const theme of ["light", "dark"])
       await page.screenshot({
         path: `temp/verification/2026-10-15-keybindings/${theme}-${width}.png`,
       });
-      await page.getByRole("button", { name: "Shortcut help", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "Shortcut help" })).toBeVisible();
-      await page.keyboard.press("Escape");
-      await expect(page.getByRole("button", { name: "Shortcut help", exact: true })).toBeFocused();
+      // The recording rules are no longer explained by an inline help popover.
+      await expect(page.getByRole("button", { name: "Shortcut help", exact: true })).toHaveCount(0);
     });
   }
 const languages = ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"];
@@ -931,14 +931,14 @@ test("automatic settings preserve values and dependent controls after reopening 
 }) => {
   await page.goto("/tests/browser/settings/settings.html");
   const toggle = page.locator('[data-setting-id="keep-awake"] [role="switch"]');
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
   await page.getByRole("button", { name: "Back to workspace" }).click();
   await page.getByRole("button", { name: "Reopen settings" }).click();
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
   await page.reload();
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
   await page.getByRole("tab", { name: "Notifications", exact: true }).click();
   const summary = page.getByRole("switch", { name: "Daily summary", exact: true });
   await expect(summary).toBeDisabled();
