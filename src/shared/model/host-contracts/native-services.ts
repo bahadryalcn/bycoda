@@ -279,6 +279,8 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
         "assistant.background.effect",
         "desktop.act.authorize",
         "management.write.authorize",
+        "tasks.write.authorize.permission",
+        "inbox.write.authorize.permission",
         "secrets.input.authorize",
         "mcp.call.authorize",
         "preferences.read",

@@ -41662,6 +41662,8 @@
               "assistant.background.effect",
               "desktop.act.authorize",
               "management.write.authorize",
+              "tasks.write.authorize.permission",
+              "inbox.write.authorize.permission",
               "secrets.input.authorize",
               "mcp.call.authorize",
               "preferences.read",
@@ -78971,6 +78973,8 @@
                     "assistant.background.effect",
                     "desktop.act.authorize",
                     "management.write.authorize",
+                    "tasks.write.authorize.permission",
+                    "inbox.write.authorize.permission",
                     "secrets.input.authorize",
                     "mcp.call.authorize",
                     "preferences.read",
@@ -96428,5 +96432,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "d1d3193b5d3ea4b9bb4535d52119bc13a50a77608ae44694f19836b3ebfac4c9"
+  "schemaHash": "2eb75c2464a9ba823dc1bf5e5e7c871b378b6586ed76dd7b9b8b37b1e4204bdf"
 }

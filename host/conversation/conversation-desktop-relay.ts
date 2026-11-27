@@ -34,7 +34,7 @@ const CAPTURE_ACTIONS = new Set(["privacy.scope.capture", "privacy.account.captu
  * Requests whose native prompt a Full access coding session skips. Native asks the Host with
  * `<action>.permission`; the answer comes from the caller-supplied `fullAccess`, never from input.
  */
-const SESSION_FULL_ACCESS_ACTIONS = new Set([
+export const SESSION_FULL_ACCESS_ACTIONS = new Set([
   "servers.ssh.execute",
   "tasks.write.authorize",
   "inbox.write.authorize",
