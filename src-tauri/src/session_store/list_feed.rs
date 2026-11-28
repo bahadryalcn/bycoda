@@ -169,7 +169,7 @@ pub async fn session_list_counts(
 pub async fn session_list_feed_revision(app: tauri::AppHandle) -> Result<i64, String> {
     crate::harness::run_blocking("session_list_feed_revision", move || {
         let store = app.state::<SessionStore>();
-        store.with_read_conn(|conn| read_revision(conn))
+        store.with_read_conn(read_revision)
     })
     .await
 }

@@ -7,7 +7,7 @@ import type { Locator, Page } from "@playwright/test";
  */
 export async function scrollToAsReader(page: Page, target: Locator) {
   const viewport = page.viewportSize()!;
-  await page.mouse.move(viewport.width / 2, viewport.height / 2);
+  await page.mouse.move(viewport.width - 24, viewport.height / 2);
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const box = await target.boundingBox();
     if (box && box.y >= 0 && box.y + box.height <= viewport.height) return;

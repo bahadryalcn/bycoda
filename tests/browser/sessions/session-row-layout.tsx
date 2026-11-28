@@ -398,16 +398,19 @@ function Fixture() {
           const project = pagedProjects.find((item) => `project:${item.key}` === key);
           if (!project || pagedLoading.has(project.key)) return;
           pagedLoading.add(project.key);
-          setTimeout(() => {
-            pagedLoading.delete(project.key);
-            setPagedLoaded((loaded) => ({
-              ...loaded,
-              [project.key]: Math.min(
-                project.sessions.length,
-                (loaded[project.key] ?? 0) + PAGED_PAGE,
-              ),
-            }));
-          }, params.has("paged-slow") ? 600 : 50);
+          setTimeout(
+            () => {
+              pagedLoading.delete(project.key);
+              setPagedLoaded((loaded) => ({
+                ...loaded,
+                [project.key]: Math.min(
+                  project.sessions.length,
+                  (loaded[project.key] ?? 0) + PAGED_PAGE,
+                ),
+              }));
+            },
+            params.has("paged-slow") ? 600 : 50,
+          );
         },
       }
     : undefined;
@@ -570,10 +573,7 @@ function Fixture() {
           <output aria-label="Selected session">{selected}</output>
           <output aria-label="Selected Git checkout">{gitCwd}</output>
           <output aria-label="Last Sessions mode">{String(lastSessionsOpen)}</output>
-          <output
-            aria-label="Loaded rows"
-            data-by-project={JSON.stringify(pagedLoaded)}
-          >
+          <output aria-label="Loaded rows" data-by-project={JSON.stringify(pagedLoaded)}>
             {pagedRows.length}
           </output>
           <output aria-label="Created project">{createdProject}</output>

@@ -771,7 +771,8 @@ describe("helpers", () => {
   it("titles ToolSearch as loading or searching tools, never a file search", () => {
     const name = "ToolSearch";
     const input = {
-      query: "select:WebSearch,mcp__bycoda-conversation__conversation_agents_delegate,mcp__bycoda-conversation__conversation_agents_options",
+      query:
+        "select:WebSearch,mcp__bycoda-conversation__conversation_agents_delegate,mcp__bycoda-conversation__conversation_agents_options",
       max_results: 5,
     };
     expect(toolKindFromName(name)).not.toBe("search");

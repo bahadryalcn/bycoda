@@ -568,7 +568,8 @@ for (const theme of ["light", "dark"])
       await expect(palette.getByRole("radio").nth(1)).toBeFocused();
       await page.getByRole("tab", { name: "Background", exact: true }).click();
       await layerRow(page, "Chat background").click();
-      const tile = page.getByRole("button", { name: "Added image", exact: true });
+      // Library tiles are named after the media's display name ("Image" for an unnamed one).
+      const tile = page.getByRole("button", { name: "Image", exact: true });
       await expect(tile).toBeVisible();
       const tileStyle = await tile.evaluate((element) => ({
         shadow: getComputedStyle(element).boxShadow,
@@ -587,6 +588,11 @@ for (const theme of ["light", "dark"])
       await tile
         .locator("..")
         .screenshot({ path: info.outputPath(`library-actions-${theme}-${width}.png`) });
+      // The tile's own actions follow it in order: save the media, then delete it.
+      await page.keyboard.press("Tab");
+      await expect(
+        page.getByRole("button", { name: "Save background", exact: true }),
+      ).toBeFocused();
       await page.keyboard.press("Tab");
       await expect(remove).toBeFocused();
     });
@@ -624,7 +630,7 @@ test("appearance selection controls respond to touch", async ({ browser }) => {
   await expect(option).toHaveCSS("box-shadow", /2px/);
   await page.getByRole("tab", { name: "Background", exact: true }).tap();
   await layerRow(page, "Chat background").tap();
-  const image = page.getByRole("button", { name: "Added image", exact: true });
+  const image = page.getByRole("button", { name: "Image", exact: true });
   const remove = page.getByRole("button", { name: "Delete image" });
   await expect(remove).toHaveCSS("opacity", "0");
   await image.tap();
@@ -989,7 +995,7 @@ test("library tile surface baseline", async ({ page }) => {
   );
   await page.getByRole("tab", { name: "Background", exact: true }).click();
   await layerRow(page, "Chat background").click();
-  const tile = page.getByRole("button", { name: "Added image", exact: true });
+  const tile = page.getByRole("button", { name: "Image", exact: true });
   const read = () =>
     tile.evaluate((el) => {
       const s = getComputedStyle(el);

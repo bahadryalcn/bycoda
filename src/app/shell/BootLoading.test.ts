@@ -64,9 +64,9 @@ it("shows the wordmark under the logo, matching the splash's scheme pick", () =>
   root = createRoot(container);
   delete (window as { __bootWordmark?: string }).__bootWordmark;
   renderLoading();
-  expect(
-    container.querySelector(".bycoda-boot-loading-wordmark")!.getAttribute("src"),
-  ).toBe("/brand/bycoda/wordmark-white.svg");
+  expect(container.querySelector(".bycoda-boot-loading-wordmark")!.getAttribute("src")).toBe(
+    "/brand/bycoda/wordmark-white.svg",
+  );
 });
 
 it("offers Retry below an unmoved logo once the boot is slow, outside the live region", () => {

@@ -102,7 +102,7 @@
       "cross-feature-deep-import": 1
     },
     "src/features/assistant/model/assistantBriefingSpeech.ts": {
-      "cross-feature-deep-import": 5
+      "cross-feature-deep-import": 4
     },
     "src/features/assistant/model/assistantClient.ts": {
       "cross-feature-deep-import": 1
@@ -310,7 +310,7 @@
       "feature-imports-app": 1
     },
     "src/features/crews/ui/CrewSessions.tsx": {
-      "cross-feature-deep-import": 4
+      "cross-feature-deep-import": 3
     },
     "src/features/crews/ui/CrewWorkDetail.tsx": {
       "cross-feature-deep-import": 1
@@ -549,9 +549,6 @@
     },
     "src/features/inbox/model/inboxNotifications.ts": {
       "cross-feature-deep-import": 2
-    },
-    "src/features/inbox/model/inboxSeen.ts": {
-      "cross-feature-deep-import": 1
     },
     "src/features/inbox/model/inboxSelfActivity.ts": {
       "cross-feature-deep-import": 1
@@ -936,7 +933,7 @@
       "cross-feature-deep-import": 4
     },
     "src/features/search/ui/SearchView.tsx": {
-      "cross-feature-deep-import": 8,
+      "cross-feature-deep-import": 7,
       "feature-imports-app": 2
     },
     "src/features/sessions/data/mountedInputCapture.ts": {
@@ -1086,7 +1083,7 @@
       "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/SessionPane.tsx": {
-      "cross-feature-deep-import": 7,
+      "cross-feature-deep-import": 6,
       "feature-imports-app": 1
     },
     "src/features/sessions/ui/SkillTokenText.tsx": {
@@ -1135,7 +1132,7 @@
       "cross-feature-deep-import": 3
     },
     "src/features/settings/ui/ArchiveSettings.tsx": {
-      "cross-feature-deep-import": 4
+      "cross-feature-deep-import": 3
     },
     "src/features/settings/ui/BuildIdentityDetails.tsx": {
       "cross-feature-deep-import": 1
@@ -1302,7 +1299,7 @@
       "cross-feature-deep-import": 4
     },
     "src/features/tasks/ui/TaskForm.tsx": {
-      "cross-feature-deep-import": 2
+      "cross-feature-deep-import": 1
     },
     "src/features/tasks/ui/TaskFormFields.tsx": {
       "cross-feature-deep-import": 1
@@ -1376,7 +1373,7 @@
       "feature-imports-app": 1
     },
     "src/features/usage/ui/UsageQuotaHistory.tsx": {
-      "cross-feature-deep-import": 2
+      "cross-feature-deep-import": 1
     },
     "src/features/voice/model/localVoiceClient.ts": {
       "cross-feature-deep-import": 1

@@ -217,13 +217,13 @@ for (const theme of ["light", "dark"] as const) {
           const bubble = node.querySelector(".user-message-bubble")?.getBoundingClientRect();
           return {
             rowBottom: row.bottom,
-            actionRight: actions.right,
             actionBottom: actions.bottom,
-            bubbleLeft: bubble?.left ?? Number.POSITIVE_INFINITY,
+            actionTop: actions.top,
+            bubbleBottom: bubble?.bottom ?? Number.NEGATIVE_INFINITY,
           };
         });
-        // The actions sit beside the bubble, never over it or under the row.
-        expect(bounds.actionRight).toBeLessThanOrEqual(bounds.bubbleLeft + 1);
+        // The actions sit under the bubble, never over it or below the row.
+        expect(bounds.actionTop).toBeGreaterThanOrEqual(bounds.bubbleBottom - 1);
         expect(bounds.actionBottom).toBeLessThanOrEqual(bounds.rowBottom);
       }
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
@@ -534,7 +534,8 @@ for (const theme of ["light", "dark"] as const) {
       });
       expect(original.original.session.id).toBe("fixture-decision-approval-session");
       await openApproval(72);
-      await expect(sheet.getByRole("status")).toBeVisible();
+      // The sheet also holds an empty sr-only live region; target the visible notice.
+      await expect(sheet.getByRole("status").filter({ hasText: /\S/ })).toBeVisible();
       await expect(sheet.getByRole("alert")).toHaveCount(0);
       await expect(allow).toBeDisabled();
       await decisionCapture(
@@ -600,7 +601,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: "Complete new callback", exact: true }).click();
       await expect(settlements).toHaveText("2");
       await openApproval(73);
-      await expect(sheet.getByRole("status")).toBeVisible();
+      await expect(sheet.getByRole("status").filter({ hasText: /\S/ })).toBeVisible();
       await expect(sheet.getByRole("alert")).toHaveCount(0);
       await expect(allow).toBeDisabled();
       await expect(page.getByLabel("Approval callback identities", { exact: true })).toHaveText(

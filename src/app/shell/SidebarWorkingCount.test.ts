@@ -265,8 +265,12 @@ it.each([true, false])(
     ];
     props.busySessionIds = new Set(["first"]);
     await render();
-    const tab = badge()?.closest('[role="tab"]');
-    expect(compact ? tab?.getAttribute("aria-label") : tab?.textContent).toContain("Sessions");
+    // The compact rail always shows its Workspace action, which carries the count; otherwise the
+    // Sessions tab does.
+    const host = badge()?.closest(compact ? "[data-compact-project-rail] button" : '[role="tab"]');
+    expect(compact ? host?.getAttribute("aria-label") : host?.textContent).toContain(
+      compact ? "Workspace" : "Sessions",
+    );
     expect(liveCount()?.textContent).toMatch(/^1 working session/);
   },
 );

@@ -89,7 +89,8 @@ for (const theme of ["dark", "light"])
         path: `temp/verification/custom-backgrounds/chat-${theme}-${width}.png`,
       });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await expect(page.locator("iframe")).toHaveCount(0);
+      // Reduced motion keeps the scene as one still frame (the preview reports reduced motion).
+      await expect(page.locator("iframe")).toHaveCount(1);
       const video = await page.evaluate(async () => {
         const canvas = document.createElement("canvas");
         canvas.width = 320;
@@ -123,7 +124,9 @@ for (const theme of ["dark", "light"])
         path: `temp/verification/custom-backgrounds/video-${theme}-${width}.png`,
       });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await expect(page.locator("video")).toHaveCount(0);
+      // Reduced motion holds the video on its first frame instead of playing it.
+      await expect(page.locator("video")).toHaveJSProperty("loop", false);
+      await expect(page.locator("video")).toHaveJSProperty("paused", true);
     });
   }
 
@@ -144,8 +147,13 @@ for (const theme of ["light", "dark"])
         `/tests/browser/settings/settings.html?backgroundProbe&section=appearance&theme=${theme}&lang=en`,
       );
       const output = `temp/verification/appearance-create`;
-      await expect(page.getByRole("button", { name: /Composer 2\.5/ }).first()).toBeVisible();
+      // The generator opens from the Appearance header instead of sitting inline in the Theme tab.
+      await page.getByRole("button", { name: "Generate with AI", exact: true }).click();
+      const generator = page.getByRole("dialog", { name: "Generate with AI", exact: true });
+      await expect(generator.getByRole("button", { name: /Composer 2\.5/ }).first()).toBeVisible();
       await page.screenshot({ path: `${output}/generator-${theme}-${width}.png` });
+      await generator.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(generator).toHaveCount(0);
       await page.getByRole("tab", { name: "Background", exact: true }).click();
       await page
         .getByRole("listitem")
@@ -521,14 +529,19 @@ for (const theme of ["dark", "light"])
       await expect(page.getByRole("textbox", { name: "Describe a theme" })).toHaveCount(0);
       await launcher.click();
       await expect(dialog.getByRole("textbox", { name: "Describe a theme" })).toBeFocused();
-      await page.getByRole("button", { name: "Apply Meadow" }).click();
+      // Choosing a theme applies it without drawing; only "Generate image" starts a drawing.
+      const themeCard = (name: string) =>
+        dialog
+          .locator(".theme-suggestion-card")
+          .filter({ has: page.getByRole("button", { name: `Apply ${name}` }) });
+      await themeCard("Meadow").getByRole("button", { name: "Generate image" }).click();
       await page
         .getByRole("textbox", { name: "Describe a theme" })
         .fill("Midnight blue with mountain silhouettes");
       const generate = page.getByRole("button", { name: "Generate themes", exact: true });
       await expect(generate).toBeEnabled();
       await generate.click();
-      await page.getByRole("button", { name: "Apply Alpine" }).click();
+      await themeCard("Alpine").getByRole("button", { name: "Generate image" }).click();
       const activity = dialog.getByRole("group", { name: "Generation", exact: true });
       await expect(activity.getByRole("button", { name: "Cancel Meadow" })).toBeVisible();
       await expect(activity.getByRole("button", { name: "Cancel Alpine" })).toBeVisible();

@@ -75,7 +75,8 @@ export function buildGlobalSessionSections(
   let groupOrder = [...groups.keys()];
   if (view.groupBy === "project" && catalog) {
     // Projects with unloaded history still get their header; the newest activity leads.
-    for (const project of catalog.projects) if (!groups.has(project.key)) groups.set(project.key, []);
+    for (const project of catalog.projects)
+      if (!groups.has(project.key)) groups.set(project.key, []);
     const latest = (key: string) =>
       Math.max(
         totals.get(key)?.latestActivityAt ?? 0,

@@ -94,10 +94,9 @@ test("settings expose advanced controls without opening a menu", async ({ page }
   ]) {
     await page.goto(`/tests/browser/settings/settings.html?section=${section}&theme=dark&lang=en`);
     const form = page.locator(".bycoda-settings-form");
-    // Legal documents, remote media options and provider setup/discovery are intentionally disclosed.
+    // Legal documents, build details and provider setup/discovery are intentionally disclosed.
     // Keep this inventory exact so ordinary settings cannot silently move behind disclosures.
     const optionalDisclosures: Record<string, string[]> = {
-      connections: ["Advanced"],
       policies: ["Build details", "Legal"],
       providers: ["#setting-antigravity-account", ".provider-cli-more"],
     };

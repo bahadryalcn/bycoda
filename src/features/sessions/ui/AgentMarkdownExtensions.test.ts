@@ -36,7 +36,7 @@ it.each([
   ["CAUTION", "Caution"],
 ])("shows a > [!%s] quote as a titled note", async (marker, title) => {
   const root = await render(`> [!${marker}]\n> Read the **migration** guide.`);
-  const note = container.querySelector('[data-markdown-alert]');
+  const note = container.querySelector("[data-markdown-alert]");
   expect(note?.getAttribute("data-markdown-alert")).toBe(marker.toLowerCase());
   expect(note?.textContent).toContain(title);
   expect(note?.textContent).toContain("Read the migration guide.");
@@ -60,15 +60,16 @@ it("draws inline and display math", async () => {
   await act(async () => root.unmount());
 });
 
-it.each(["It costs $5 and $10 per seat.", "Input $3 / $15 per MTok.", "Set $HOME and $PATH first."])(
-  "leaves dollar amounts as text: %s",
-  async (text) => {
-    const root = await render(text);
-    expect(container.querySelector(".katex")).toBeNull();
-    expect(container.textContent).toContain(text);
-    await act(async () => root.unmount());
-  },
-);
+it.each([
+  "It costs $5 and $10 per seat.",
+  "Input $3 / $15 per MTok.",
+  "Set $HOME and $PATH first.",
+])("leaves dollar amounts as text: %s", async (text) => {
+  const root = await render(text);
+  expect(container.querySelector(".katex")).toBeNull();
+  expect(container.textContent).toContain(text);
+  await act(async () => root.unmount());
+});
 
 it("turns emoji shortcodes into emoji outside code", async () => {
   const root = await render("Ship it :rocket: and `keep :rocket:`");
@@ -87,7 +88,7 @@ it("keeps highlight and underline marks", async () => {
 
 it("previews a whole HTML document and keeps a fragment as code with a preview switch", async () => {
   const root = await render(
-    "```html\n<!doctype html><html><body><h1>Hi</h1></body></html>\n```\n\n```html\n<div class=\"x\">part</div>\n```",
+    '```html\n<!doctype html><html><body><h1>Hi</h1></body></html>\n```\n\n```html\n<div class="x">part</div>\n```',
   );
   const previews = container.querySelectorAll("[data-html-fence-preview]");
   expect(previews.length).toBe(1);

@@ -108,7 +108,9 @@ impl<'a> Exchange<'a> {
     pub(super) fn refused_message(&self) -> &'static str {
         if local_endpoints::contains(self.endpoint) {
             let within_update = health().with(self.endpoint, |health| {
-                health.down_since.is_none_or(|since| since.elapsed() < UPDATE_WINDOW)
+                health
+                    .down_since
+                    .is_none_or(|since| since.elapsed() < UPDATE_WINDOW)
             });
             if within_update && (self.updating)() {
                 LOCAL_HOST_UPDATING
@@ -242,8 +244,15 @@ impl TransportHealth {
     /// ever answered, for longer than a plain start takes.
     fn may_be_restarting(&self, exchange: &Exchange<'_>) -> bool {
         let (restarting, updating_window) = self.with(exchange.endpoint, |health| {
-            let within = |window| health.down_since.is_none_or(|since| since.elapsed() < window);
-            (health.reached && within(RESTART_WINDOW), within(UPDATE_WINDOW))
+            let within = |window| {
+                health
+                    .down_since
+                    .is_none_or(|since| since.elapsed() < window)
+            };
+            (
+                health.reached && within(RESTART_WINDOW),
+                within(UPDATE_WINDOW),
+            )
         });
         restarting || (updating_window && (exchange.updating)())
     }

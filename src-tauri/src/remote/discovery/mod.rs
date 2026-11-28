@@ -809,8 +809,11 @@ mod tests {
         );
         let (tx, rx) = mpsc::channel();
         tx.send(Source::Candidates(peers)).unwrap();
-        tx.send(Source::Candidates(vec![candidate("Jane-MBP", "ssh-config")]))
-            .unwrap();
+        tx.send(Source::Candidates(vec![candidate(
+            "Jane-MBP",
+            "ssh-config",
+        )]))
+        .unwrap();
         tx.send(Source::KnownHosts(
             "jane-mbp ssh-ed25519 a2V5\nother ssh-ed25519 b3RoZXI\n".into(),
         ))
@@ -833,7 +836,10 @@ mod tests {
         assert_eq!(sources, vec!["known-hosts", "ssh-config", "tailscale"]);
         // The short name is a route only because an SSH source vouches for it.
         let routes: Vec<_> = row.routes.iter().map(|r| r.address.as_str()).collect();
-        assert_eq!(routes, vec!["jane-mbp.tail.ts.net", "100.64.0.9", "jane-mbp"]);
+        assert_eq!(
+            routes,
+            vec!["jane-mbp.tail.ts.net", "100.64.0.9", "jane-mbp"]
+        );
         assert!(!row.already_added);
         // A machine saved under the short name marks its peer, which has no such route.
         assert!(find("n").already_added);

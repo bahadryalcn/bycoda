@@ -258,7 +258,11 @@ it("pages a segment by 30 on loadMore until it is done, then stops asking", asyn
     const calls = feed.page.mock.calls.length;
     await act(async () => result.catalog.loadMore("flat"));
     expect(feed.page.mock.calls.length).toBe(calls);
-    expect(pageQueries().at(-1)).toMatchObject({ pinned: false, limit: 30, settledMode: "exclude" });
+    expect(pageQueries().at(-1)).toMatchObject({
+      pinned: false,
+      limit: 30,
+      settledMode: "exclude",
+    });
   } finally {
     await act(async () => root.unmount());
   }
@@ -276,7 +280,12 @@ it("lists projects from the native groups and loads each with every stored cwd v
   try {
     expect(result.catalog.projects).toEqual([
       { key: "/other", cwd: "/other", count: 1, latestActivityAt: NOW - 1000 },
-      { key: "/visible", cwd: expect.stringMatching(/^\/visible\/?$/), count: 2, latestActivityAt: NOW - 5000 },
+      {
+        key: "/visible",
+        cwd: expect.stringMatching(/^\/visible\/?$/),
+        count: 2,
+        latestActivityAt: NOW - 5000,
+      },
     ]);
     await act(async () => result.catalog.loadMore("project:/visible"));
     const query = pageQueries().at(-1)!;

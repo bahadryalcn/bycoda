@@ -1782,8 +1782,7 @@ function SidebarComponent({
                   globalSessionFilters.showArchived,
                   // The Settled filter lists only settled sessions; otherwise they go on the shelf.
                 ).filter(
-                  (session) =>
-                    !globalSessionFilters.showSettled || isGlobalSessionSettled(session),
+                  (session) => !globalSessionFilters.showSettled || isGlobalSessionSettled(session),
                 ),
                 globalSessionFilters.assistantManaged,
               ),
@@ -1849,8 +1848,7 @@ function SidebarComponent({
   const globalPaging: GlobalSessionPaging | undefined =
     catalogPaging && settledPastFloor
       ? {
-          segment: (key) =>
-            key === "settled" ? { status: "done" } : catalogPaging.segment(key),
+          segment: (key) => (key === "settled" ? { status: "done" } : catalogPaging.segment(key)),
           loadMore: catalogPaging.loadMore,
         }
       : catalogPaging;

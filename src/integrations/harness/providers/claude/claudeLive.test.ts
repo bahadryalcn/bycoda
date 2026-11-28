@@ -632,7 +632,7 @@ describe("claude streamed tool inputs", () => {
         status: "pending",
       }),
     );
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     const tool = session.blocks.find((block) => block.tool?.callId === "toolu_shell");
     expect(tool?.text).toBe("git status --short");
     expect(tool?.tool?.status).toBe("completed");
@@ -649,7 +649,7 @@ describe("claude streamed tool inputs", () => {
         content_block: { type: "server_tool_use", id: "srvtoolu_adv", name: "advisor", input: {} },
       },
     });
-    const pending = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const pending = applyHarnessEvents(newSession("claude", "/repo"), events);
     const open = pending.blocks.find((block) => block.tool?.callId === "srvtoolu_adv");
     expect(open?.tool?.kind).toBe("advisor");
     expect(open?.streaming).toBe(true);
@@ -669,7 +669,7 @@ describe("claude streamed tool inputs", () => {
     });
     emit({ type: "result", subtype: "success", session_id: "sess_1" });
     await turn;
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     const tool = session.blocks.find((block) => block.tool?.callId === "srvtoolu_adv");
     expect(tool?.tool?.status).toBe("completed");
     expect(tool?.streaming).toBeFalsy();
@@ -703,7 +703,7 @@ describe("claude streamed tool inputs", () => {
       session_id: "sess_1",
       message: { content: [{ type: "tool_result", tool_use_id: "toolu_ls", content: "a" }] },
     });
-    const between = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const between = applyHarnessEvents(newSession("claude", "/repo"), events);
     const closed = between.blocks.find((block) => block.tool?.callId === "srvtoolu_lost");
     expect(closed?.tool?.status).toBe("interrupted");
     expect(closed?.streaming).toBeFalsy();
@@ -724,7 +724,7 @@ describe("claude streamed tool inputs", () => {
     });
     emit({ type: "result", subtype: "success", session_id: "sess_1" });
     await turn;
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     const tool = session.blocks.find((block) => block.tool?.callId === "srvtoolu_end");
     expect(tool?.tool?.status).toBe("interrupted");
   });
@@ -781,7 +781,7 @@ describe("claude task tools", () => {
     emit({ type: "result", subtype: "success", session_id: "sess_1" });
     await turn;
 
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     const lists = session.blocks.filter((block) => block.role === "tasks");
     expect(lists).toHaveLength(1);
     expect(lists[0].taskList?.items).toEqual([
@@ -832,7 +832,7 @@ describe("claude task tools", () => {
     emit({ type: "result", subtype: "success", session_id: "sess_1" });
     await second;
 
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     const lists = session.blocks.filter((block) => block.role === "tasks");
     expect(lists.at(-1)?.taskList?.items).toEqual([
       { id: "1", text: "Write tests", status: "completed" },
@@ -888,7 +888,7 @@ describe("claude task tools", () => {
   }
 
   function lastTaskItems(events: HarnessEvent[]) {
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     return session.blocks.filter((block) => block.role === "tasks").at(-1)?.taskList?.items;
   }
 
@@ -1199,7 +1199,7 @@ describe("claude assistant message boundaries", () => {
     emit({ type: "result", subtype: "success", session_id: "sess_1" });
     await turn;
 
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     expect(session.blocks.map((block) => block.text)).toEqual([progress, update]);
     expect(events.filter((event) => event.type === "message.delta")).toEqual([
       { type: "message.delta", text: progress },
@@ -1794,7 +1794,7 @@ describe("claude subagents", () => {
     }
     expect(events.filter((event) => event.type === "question.asked")).toHaveLength(1);
     for (const id of ["child_a", "child_b"]) {
-      const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+      const session = applyHarnessEvents(newSession("claude", "/repo"), events);
       const request = session.pendingQuestion!;
       expect(request.questions[0].prompt).toBe(`Question from ${id}`);
       respondClaudeQuestion(
@@ -1902,7 +1902,7 @@ describe("claude subagents", () => {
         () => events.some((event) => event.type === "question.resolved"),
         "cancelled question",
       );
-      const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+      const session = applyHarnessEvents(newSession("claude", "/repo"), events);
       const remaining = cancelled === "child_a" ? "child_b" : "child_a";
       expect(session.pendingQuestion?.questions[0].prompt).toBe(remaining);
       respondClaudeQuestion("s1", session.pendingQuestion!.requestId, {
@@ -2032,7 +2032,7 @@ describe("claude subagents", () => {
         status: "completed",
         summary: "First agent finished",
       });
-      const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+      const session = applyHarnessEvents(newSession("claude", "/repo"), events);
       expect(session.blocks.find((block) => block.tool?.callId === "toolu_a")?.tool).toMatchObject({
         status: "completed",
         detail: "First agent finished",
@@ -2076,7 +2076,7 @@ describe("claude subagents", () => {
       description,
       summary: "Reading the auth module",
     });
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     expect(session.blocks.filter((block) => block.tool?.kind === "agent")).toHaveLength(1);
     expect(
       session.blocks.find((block) => block.tool?.callId === `agent:${description}`)?.tool,
@@ -2095,7 +2095,7 @@ describe("claude subagents", () => {
     emit({ type: "result", subtype: "success", session_id: "sess_1" });
     await turn;
 
-    const finished = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const finished = applyHarnessEvents(newSession("claude", "/repo"), events);
     expect(finished.blocks.filter((block) => block.tool?.kind === "agent")).toHaveLength(1);
     expect(
       finished.blocks.find((block) => block.tool?.callId === `agent:${description}`)?.tool,
@@ -2828,7 +2828,7 @@ describe("claude subagents", () => {
     emit({ type: "result", subtype: "success", session_id: "sess_1" });
     await turn;
 
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     expect(
       session.blocks.find((block) => block.tool?.callId === "toolu_agent")?.agentRun?.steps,
     ).toMatchObject([
@@ -3048,7 +3048,7 @@ describe("claude background tasks", () => {
     );
     emitFollowUpTurn("Finished");
     await turn;
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     expect(
       session.blocks.find((b) => b.tool?.callId === "background:b1")?.tool?.preview?.output,
     ).toContain("Earlier output omitted");
@@ -3143,7 +3143,7 @@ describe("claude background tasks", () => {
     expect(backgroundUpdates(events)).toEqual([["Wait 30 seconds then print done"], []]);
     // The command waited on sits under the message Claude left off with as
     // a row of its own, and the reply is a new message after it, once.
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     const turn1 = session.blocks.slice(1);
     const background = turn1.find((block) => block.tool?.background);
     expect(background?.tool).toMatchObject({
@@ -3172,7 +3172,7 @@ describe("claude background tasks", () => {
     emitBackgroundBash();
     await new Promise((r) => setTimeout(r, 10));
 
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     const last = session.blocks.at(-1);
     expect(session.blocks.at(-2)?.text).toBe("waiting");
     expect(last?.tool).toMatchObject({
@@ -3279,7 +3279,7 @@ describe("claude stopping background work", () => {
     expect(interrupts()).toHaveLength(0);
 
     endShell("killed");
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     const row = session.blocks.find((b) => b.tool?.callId === "background:b7");
     expect(row?.tool).toMatchObject({
       status: "stopped",
@@ -3306,7 +3306,7 @@ describe("claude stopping background work", () => {
       status: "stopped",
       summary: "Agent stopped",
     });
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     expect(session.blocks.find((b) => b.tool?.callId === "toolu_agent9")?.tool).toMatchObject({
       status: "stopped",
       detail: "Stopped by you.",
@@ -3372,7 +3372,7 @@ describe("claude stopping background work", () => {
         ],
       },
     });
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     const block = session.blocks.find((b) => b.tool?.callId === "toolu_inline");
     expect(block?.tool?.status).toBe("stopped");
     expect(block?.tool?.detail).toContain("stopped by the user");
@@ -3384,7 +3384,7 @@ describe("claude stopping background work", () => {
 
     await stopClaudeBackgroundWork("s1", "background:b7");
     emitBashFinished("b7");
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     expect(session.blocks.find((b) => b.tool?.callId === "background:b7")?.tool?.status).toBe(
       "completed",
     );
@@ -3414,7 +3414,7 @@ describe("claude stopping background work", () => {
       status: "killed",
       summary: "",
     });
-    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
     expect(session.blocks.find((b) => b.tool?.callId === "background:b7")?.tool?.status).toBe(
       "failed",
     );

@@ -350,6 +350,12 @@ test("workspace picker uses spare header width before clipping names", async ({
       }
     }
   }
+  // The tools stay inline only while the pane is at least 460px wide. The 800px pass clamped
+  // the pane, so widen it again from its current size (Enter would reset to the 394px default).
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await resize.focus();
+  for (let step = 0; step < 3; step++) await resize.press("Shift+ArrowRight");
+  await resize.blur();
   await page.getByRole("tab", { name: /^Sessions/ }).click();
   await header.getByRole("button", { name: "Search sessions", exact: true }).click();
   const search = header.getByRole("combobox", { name: /^Search sessions/ });
@@ -829,8 +835,8 @@ test("workspace header keeps location before session tools and holds no window n
               );
             else expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
           }
-          // A narrow pane folds the session tools into "More actions".
-          const sessionTools = constrained ? "More actions" : "Search sessions";
+          // The shared workspace-pane breakpoint (460px) folds the session tools into "More actions".
+          const sessionTools = paneWidth < 460 ? "More actions" : "Search sessions";
           const toolsControl = header.getByRole("button", { name: sessionTools, exact: true });
           await expect(toolsControl).toBeInViewport();
           const toolsBounds = (await toolsControl.boundingBox())!;
@@ -840,8 +846,8 @@ test("workspace header keeps location before session tools and holds no window n
           previousRight = toolsBounds.x + toolsBounds.width;
           if (project) {
             const label = newSession.getByText("New session", { exact: true });
-            // The shared pane-header breakpoint: at 26rem or less the label folds to its icon.
-            const showLabel = paneWidth > 26 * 16;
+            // The workspace header's own breakpoint: at 18rem or less the label folds to its icon.
+            const showLabel = paneWidth > 18 * 16;
             if (showLabel) await expect(label).toBeVisible();
             else
               await expect
@@ -1011,9 +1017,8 @@ test("Changes hides the full caption when it would overlap its icon or counts", 
       );
       await sidebar.screenshot({ path: testInfo.outputPath(`changes-wide-${theme}-${width}.png`) });
       await setTabWidth(190);
-      expect((await label.boundingBox())!.y).toBeGreaterThanOrEqual(
-        (await labelSlot.boundingBox())!.y + (await labelSlot.boundingBox())!.height,
-      );
+      // The caption is dropped whole (never clipped) once it would crowd the icon or counts.
+      await expect(label).toBeHidden();
       await expect(icon).toBeVisible();
       await expect(stats).toBeVisible();
       await expect(count).toBeVisible();

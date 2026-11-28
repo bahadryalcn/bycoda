@@ -60,7 +60,9 @@ describe("buildGlobalSessionSections", () => {
 
   it("keeps settled sessions in place when the Settled filter lists only them", () => {
     expect(
-      shape(buildGlobalSessionSections(sessions, { groupBy: "none", sort: "oldest" }, () => "idle")),
+      shape(
+        buildGlobalSessionSections(sessions, { groupBy: "none", sort: "oldest" }, () => "idle"),
+      ),
     ).toEqual([
       ["pinned", ["pinned-old", "pinned-settled"]],
       ["", ["a2", "settled", "b1", "a1", "scratch"]],
@@ -72,8 +74,8 @@ describe("buildGlobalSessionSections", () => {
     const sections = buildGlobalSessionSections(sessions, view, () => "idle", settled);
     const collapsed = new Set(["pinned", "project:g:/a", "settled"]);
     const shown = (expand: boolean) =>
-      visibleGlobalSections(sections, view, (key) => collapsed.has(key), expand).flatMap(
-        (entry) => entry.shown.map((session) => session.id),
+      visibleGlobalSections(sections, view, (key) => collapsed.has(key), expand).flatMap((entry) =>
+        entry.shown.map((session) => session.id),
       );
     expect(shown(false)).toEqual(["b1", "scratch"]);
     expect(shown(true)).toHaveLength(sessions.length);
@@ -89,8 +91,8 @@ describe("catalog totals", () => {
       settled,
       {
         projects: [
-          { key: "g:/c", count: 40, latestActivityAt: 100 },
-          { key: "g:/a", count: 12, latestActivityAt: 8 },
+          { key: "g:/c", cwd: "G:/c", count: 40, latestActivityAt: 100 },
+          { key: "g:/a", cwd: "G:/a", count: 12, latestActivityAt: 8 },
         ],
         settledCount: 900,
       },

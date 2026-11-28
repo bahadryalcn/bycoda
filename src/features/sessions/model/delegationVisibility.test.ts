@@ -37,8 +37,8 @@ describe("delegation collection visibility", () => {
     const summary = summaryFromSession(run);
     expect(summary.delegationParent).toEqual(parent);
     expect(liveSessionInfos([run])).toEqual([]);
-    expect(
-      mergeGlobalRecentSessions([summary], [], [run], new Set([pathKey("/repo")])),
-    ).toEqual([]);
+    expect(mergeGlobalRecentSessions([summary], [], [run], new Set([pathKey("/repo")]))).toEqual(
+      [],
+    );
   });
 });

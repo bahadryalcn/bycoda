@@ -871,11 +871,7 @@ function MarkdownBlockquote({
  * A raw `<iframe>`: an inline page (`srcdoc`) runs in the visual sandbox; a remote page is never
  * embedded, it stays a link the owner can open.
  */
-function MarkdownFrameTag({
-  src,
-  srcDoc,
-  title,
-}: ComponentProps<"iframe"> & { node?: unknown }) {
+function MarkdownFrameTag({ src, srcDoc, title }: ComponentProps<"iframe"> & { node?: unknown }) {
   if (srcDoc?.trim())
     return (
       <FenceCard

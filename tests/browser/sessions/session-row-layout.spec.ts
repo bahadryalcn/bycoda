@@ -1460,10 +1460,7 @@ for (const theme of ["light", "dark"]) {
       await expect(menu.getByRole("menuitemcheckbox").first()).toHaveText("Group by project");
       // Project grouping is the default: each project folds under its own header.
       await expect(project).toBeChecked();
-      await expect(list.locator("[data-global-project-group]")).toHaveText([
-        /demo-repo/,
-        /bycoda/,
-      ]);
+      await expect(list.locator("[data-global-project-group]")).toHaveText([/demo-repo/, /bycoda/]);
       await screenshot("project-menu");
 
       await state.click();
@@ -1696,9 +1693,7 @@ for (const theme of ["light", "dark"]) {
     await first.click();
     await expect(panel.locator('[data-session-list-loader="project:/fixture/p01"]')).toHaveCount(0);
     // Open projects keep paging to their end while the collapsed one stays where it was.
-    await expect
-      .poll(async () => (await loadedBy())["/fixture/p02"], { timeout: 10_000 })
-      .toBe(75);
+    await expect.poll(async () => (await loadedBy())["/fixture/p02"], { timeout: 10_000 }).toBe(75);
     expect((await loadedBy())["/fixture/p01"] ?? 0).toBeLessThanOrEqual(30);
     await page.screenshot({
       path: `temp/verification/last-sessions-paging/${theme}-1280-collapsed.png`,

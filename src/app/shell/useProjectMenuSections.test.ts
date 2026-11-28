@@ -2,7 +2,11 @@ import { expect, it } from "vitest";
 import { separateSections } from "./useProjectMenu";
 import type { TabGroupMenuExtraItem } from "../../features/workspace/ui/TabGroupMenu";
 
-const item = (id: string): TabGroupMenuExtraItem => ({ id, label: id, icon: (() => null) as never });
+const item = (id: string): TabGroupMenuExtraItem => ({
+  id,
+  label: id,
+  icon: (() => null) as never,
+});
 
 it("keeps the group menu order and puts one separator between non-empty sections", () => {
   const items = separateSections([

@@ -192,9 +192,7 @@ export function GlobalSessionListWindow({
       rows.push({
         kind: "heading",
         key: JSON.stringify([view.groupBy, section.key]),
-        label: projectless
-          ? t("No project")
-          : projectDisplayNameFrom(section.cwd, labels),
+        label: projectless ? t("No project") : projectDisplayNameFrom(section.cwd, labels),
         project: {
           cwd: projectless ? "" : section.cwd,
           collapseKey: globalSectionCollapseKey(section, view)!,
@@ -241,11 +239,7 @@ export function GlobalSessionListWindow({
         if (row.kind === "session")
           return (
             <li {...virtual} key={row.key}>
-              {renderSession(
-                row.session,
-                isActive(row.session),
-                row.groupSection === "pinned",
-              )}
+              {renderSession(row.session, isActive(row.session), row.groupSection === "pinned")}
             </li>
           );
         if (row.kind === "group") {

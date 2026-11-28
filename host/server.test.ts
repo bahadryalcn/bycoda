@@ -5219,7 +5219,7 @@ describe("remote host API", () => {
     expect(await list()).toEqual([{ id: "codex:new", name: "New" }]);
     expect(modelProbe).toHaveBeenCalledTimes(2);
   });
-  it("re-probes models once the catalog is five minutes old", async () => {
+  it("re-probes models once the catalog is an hour old", async () => {
     const s = await setup();
     modelProbe.mockClear();
     modelProbe.mockResolvedValueOnce([{ id: "codex:old", name: "Old" }]);
@@ -5229,9 +5229,12 @@ describe("remote host API", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       expect(await list()).toEqual([{ id: "codex:old", name: "Old" }]);
-      vi.setSystemTime(Date.now() + 4 * 60_000);
+      // Reads inside the idle window keep the entry; it expires an hour after discovery.
+      vi.setSystemTime(Date.now() + 29 * 60_000);
       expect(await list()).toEqual([{ id: "codex:old", name: "Old" }]);
-      vi.setSystemTime(Date.now() + 60_000);
+      vi.setSystemTime(Date.now() + 29 * 60_000);
+      expect(await list()).toEqual([{ id: "codex:old", name: "Old" }]);
+      vi.setSystemTime(Date.now() + 2 * 60_000);
       expect(await list()).toEqual([{ id: "codex:new", name: "New" }]);
     } finally {
       vi.useRealTimers();

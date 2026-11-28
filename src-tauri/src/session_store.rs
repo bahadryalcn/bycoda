@@ -17,8 +17,8 @@ mod deletions;
 pub(crate) mod host_notes_fence;
 pub(crate) mod incremental;
 mod interruption_repair;
-pub(crate) mod list_feed;
 mod legacy_blob;
+pub(crate) mod list_feed;
 pub(crate) mod native_delivery;
 #[cfg(all(test, windows))]
 mod native_projection_join_tests;

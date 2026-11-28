@@ -135,7 +135,9 @@ describe("popup rows preserve natural width within the viewport", () => {
     expect(readFileSync(join(__dirname, "../lib/popover.ts"), "utf8")).toContain(
       "export const POPUP_MAX_WIDTH = 800;",
     );
-    expect(read("Popover.tsx")).toContain("popupListWidth(naturalWidth, minWidth)");
+    expect(read("Popover.tsx")).toContain(
+      "popupListWidth(Math.max(naturalWidth, listWidth.current), minWidth)",
+    );
   });
 
   it.each([

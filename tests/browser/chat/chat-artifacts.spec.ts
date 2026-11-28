@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { scrollToAsReader } from "../support/readerScroll";
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
@@ -405,6 +406,8 @@ test("chat messages, attachment references and running work keep a readable hier
       // Compact image cards contain only a thumbnail. File identity remains on
       // the preview action and tooltip; size sits beside the copied text token.
       await expect(image).toHaveAccessibleName("Open screenshot-1.png full screen");
+      // The transcript re-follows its tail after a script-driven scroll; a reader's wheel stays put.
+      await scrollToAsReader(page, image);
       await image.hover();
       await expect(page.getByRole("tooltip")).toContainText("image1 · screenshot-1.png");
       await page.mouse.move(0, 0);

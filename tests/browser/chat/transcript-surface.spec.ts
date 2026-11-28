@@ -300,7 +300,11 @@ test.describe("trigger", () => {
     await expect(row).toBeAttached();
     await expect(reply.locator("details > summary:has-text('Contrast check')")).toHaveCount(0);
     const openBefore = await reply.locator("details[open]").count();
-    await row.click();
+    // The card's one action covers its face (it opens the run's own panel), so the click lands on it.
+    await reply
+      .locator("[data-subagent-card-action]")
+      .and(reply.getByRole("button", { name: "Open Contrast check in its own panel" }))
+      .click();
     await expect(reply.locator("details[open]")).toHaveCount(openBefore);
   });
 

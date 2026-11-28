@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.32]
+
+### Added
+
+- Session history loads page by page, so long histories open quickly.
+- Chat backgrounds can be a video, an HTML scene or a saved design.
+- Source control changes have filtered bulk actions.
+- Remote project terminals run on the Host when SSH is unavailable.
+- The rail's working count uses a shared solid badge.
+- SSH shell suggestions are filtered in the view from a catalog read when the prompt appears.
+- Dotenv files are highlighted, and terminals of a removed worktree restart in the project.
+- The model picker shows each provider's last model list right after launch, then refreshes it from the provider.
+
+### Changed
+
+- Generated themes apply across all Appearance tabs, and the AI generator opens from the Appearance header.
+- Workspace navigation and the worktree picker are refined; worktrees with changes open by default.
+- Remote machine discovery, pairing and sharing are clearer, and sessions recover after a reconnect.
+- The update dialog is larger and groups release notes into scrolling sections.
+- The Host ships with a pinned bykit 0.2.1.
+
+### Fixed
+
+- A Stop no longer waits for the file scan of an abandoned turn, and session file revert is more robust.
+- Room privacy changes that never reached the Host are retried automatically.
+- Failing outreach enrollments back off instead of retrying at once.
+- Workspace cleanup inventories links without blocking off Windows.
+
 ## [0.7.30]
 
 ### Added

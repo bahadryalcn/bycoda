@@ -156,7 +156,9 @@ it("loads a project's next page when its loader row mounts and stops once done",
   status.set("project:/workspace/three", "done");
   await act(async () => root.render(createElement(Window, { ...props })));
   expect(container.querySelector("[data-session-list-loader]")).toBeNull();
-  expect(container.querySelector('[data-global-project-group="project:/workspace/three"]')).toBeNull();
+  expect(
+    container.querySelector('[data-global-project-group="project:/workspace/three"]'),
+  ).toBeNull();
 });
 
 it("keeps browser scroll anchoring off the windowed session scroller", () => {

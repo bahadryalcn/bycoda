@@ -15,7 +15,10 @@ export function sessionSubagents(
 ): DockAgent[] {
   const visible = blocks.filter((block) => !block.internal);
   let lastUser = visible.length - 1;
-  while (lastUser >= 0 && (visible[lastUser].role !== "user" || isQuestionAnswer(visible[lastUser])))
+  while (
+    lastUser >= 0 &&
+    (visible[lastUser].role !== "user" || isQuestionAnswer(visible[lastUser]))
+  )
     lastUser--;
   // Only the latest turn can still be running; an earlier unfinished call was cut off.
   const native = visible.flatMap((block, index) =>

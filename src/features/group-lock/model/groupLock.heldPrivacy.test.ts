@@ -19,7 +19,9 @@ const record = {
   salt: "AAAAAAAAAAAAAAAAAAAAAA==",
   hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
 };
-const failure = "RPC_WS_DEADLINE: Host request deadline elapsed before dispatch";
+// A deadline after dispatch leaves the outcome unknown, so the drain holds it; a failure before
+// dispatch is replayed automatically and never reaches this state.
+const failure = "RPC_WS_DEADLINE: Host request deadline elapsed or native consumer detached";
 const hostUp = (command: string) =>
   Promise.resolve(
     command === "control_privacy_projection_read" ? { revision: 4 } : { revision: 5 },

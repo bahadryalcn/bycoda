@@ -132,11 +132,7 @@ function ApprovalDetail({ detail }: { detail: string }) {
           items={[
             {
               id: "copy",
-              label: feedback.copied
-                ? t("Copied")
-                : feedback.failed
-                  ? t("Retry copy")
-                  : t("Copy"),
+              label: feedback.copied ? t("Copied") : feedback.failed ? t("Retry copy") : t("Copy"),
               icon: feedback.copied ? <Check /> : feedback.failed ? <RotateCcw /> : <Copy />,
               tone: feedback.copied ? "success" : feedback.failed ? "danger" : undefined,
               loading: feedback.pending,

@@ -49,8 +49,7 @@ export async function resolvePinTarget(sessionId: string, cwd: string): Promise<
   const owner = hostSessionBinding({ id: sessionId });
   if (!owner) {
     // Projectless conversations are stored under "~" and pin like any local record.
-    if (!cwd || isRemoteProjectPath(cwd))
-      throw new Error("The pin owner is unavailable.");
+    if (!cwd || isRemoteProjectPath(cwd)) throw new Error("The pin owner is unavailable.");
     return { kind: "native", sessionId, cwd };
   }
   if (!owner.created)

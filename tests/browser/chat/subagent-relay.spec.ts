@@ -490,7 +490,7 @@ for (const theme of ["light", "dark"])
       ).toBeHidden();
       await advisor.locator("summary").click();
       // Transcript: a completion folds into its card; a notice without a card stays a disclosure.
-      const benchmark = page.locator('summary[aria-label$="Benchmark review\'s work"]');
+      const benchmark = page.locator('button[aria-label$="Benchmark review\'s work"]');
       await expect(async () => {
         if ((await benchmark.getAttribute("aria-expanded")) !== "true") await benchmark.click();
         await expect(page.getByText("Result received by the main agent")).toHaveCount(1, {

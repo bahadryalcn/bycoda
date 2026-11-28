@@ -43,9 +43,10 @@ describe("global recent sessions", () => {
       { ...row("archive"), archived: true },
       { ...row("worker"), orchestrationLeadId: "lead" },
     ];
-    expect(mergeGlobalRecentSessions(rows, [], [], allowed).map((entry) => entry.cwd)).toEqual(
-      ["remote://host-a/work", "remote://host-b/work"],
-    );
+    expect(mergeGlobalRecentSessions(rows, [], [], allowed).map((entry) => entry.cwd)).toEqual([
+      "remote://host-a/work",
+      "remote://host-b/work",
+    ]);
   });
 
   it("keeps archived rows only when asked for archived, with the other filters intact", () => {

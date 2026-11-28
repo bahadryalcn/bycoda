@@ -151,6 +151,14 @@ async function runTurn(
   });
 }
 
+/** The `--model` value for a one-shot text prompt given the bare native model ID. */
+export function antigravityTextLaunchModel(
+  nativeId: string,
+  settings?: Readonly<Record<string, string>>,
+): string {
+  return antigravityLaunchModel(findModel(`antigravity:${nativeId}`), nativeId, settings);
+}
+
 function launchFor(input: SendTurnInput) {
   const model = antigravityLaunchModel(
     findModel(input.model),

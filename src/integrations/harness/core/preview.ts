@@ -362,10 +362,7 @@ function specialToolTitle(name: string, input: Record<string, unknown>): string 
     const query = coerceString(input.query)?.trim() ?? "";
     const select = query.match(/^select:(.*)$/i)?.[1];
     if (select !== undefined) {
-      const names = select
-        .split(",")
-        .map(humanToolName)
-        .filter(Boolean);
+      const names = select.split(",").map(humanToolName).filter(Boolean);
       return names.length ? `Load tools: ${names.join(", ")}` : "Load tools";
     }
     return query ? `Search tools: ${query}` : "Search tools";

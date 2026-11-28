@@ -92,4 +92,3 @@ export function mergeGlobalRecentSessions(
         globalSessionKey(a).localeCompare(globalSessionKey(b)),
     );
 }
-

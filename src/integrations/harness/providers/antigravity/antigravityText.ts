@@ -18,8 +18,7 @@ import {
   type ChildProcessHandle,
 } from "../../core/child";
 import type { TextPromptInput } from "../../core/registry";
-import { findModel } from "../../../../features/sessions/model/models";
-import { antigravityLaunchModel } from "./antigravityStreamProtocol";
+import { antigravityTextLaunchModel } from "./antigravityStream";
 import {
   asRecord,
   antigravitySpawnCwd,
@@ -202,14 +201,7 @@ async function runStreamText(
         "stream-json",
         "--disable-slash-commands",
         ...(input.model
-          ? [
-              "--model",
-              antigravityLaunchModel(
-                findModel(`antigravity:${input.model}`),
-                input.model,
-                input.modelSettings,
-              ),
-            ]
+          ? ["--model", antigravityTextLaunchModel(input.model, input.modelSettings)]
           : []),
       ],
       workspace.cwd,

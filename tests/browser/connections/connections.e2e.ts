@@ -148,15 +148,17 @@ for (const theme of ["light", "dark"]) {
       const share = page.getByRole("dialog", { name: "Create link", exact: true });
       await expect(share).toBeVisible();
       await expect(share.getByRole("button", { name: "Share", exact: true })).toBeEnabled();
-      await share.getByRole("textbox", { name: "Local URL or port" }).fill("4567");
+      await share.getByRole("textbox", { name: "Port or local address" }).fill("4567");
       await page.screenshot({ path: `${evidence}/${theme}-${width}-share.png` });
       await share.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(share).toHaveCount(0);
       await root.getByRole("tab", { name: "Computers", exact: true }).click();
       await root.getByRole("tab", { name: "Sharing", exact: true }).click();
       await createLink.click();
-      await expect(share.getByRole("textbox", { name: "Local URL or port" })).toHaveValue("4567");
-      await share.getByText("bycoda host", { exact: true }).click();
+      await expect(share.getByRole("textbox", { name: "Port or local address" })).toHaveValue(
+        "4567",
+      );
+      await share.getByText("Remote access", { exact: true }).click();
       const restart = share.getByRole("checkbox", { name: "Restart tunnel automatically" });
       await expect(restart).not.toBeChecked();
       await restart.check();
@@ -191,7 +193,7 @@ for (const theme of ["light", "dark"]) {
       ).toHaveText(["Error", "Starting", "Connected"]);
       await expect(dialog.getByRole("button", { name: "Copy URL", exact: true })).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Share", exact: true })).toBeEnabled();
-      await dialog.getByRole("textbox", { name: "Local URL or port" }).focus();
+      await dialog.getByRole("textbox", { name: "Port or local address" }).focus();
       const evidence = "temp/verification/connections-redesign";
       mkdirSync(evidence, { recursive: true });
       await page.screenshot({ path: `${evidence}/${theme}-${width}-project-tunnels.png` });

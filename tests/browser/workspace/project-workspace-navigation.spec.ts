@@ -952,14 +952,14 @@ async function choose(panel: Locator, label: string, option: string | RegExp) {
     .click();
 }
 
-// The sidebar header is the only worktree selector: "All worktrees" first, then every worktree.
+// The sidebar header is the only worktree selector: "All repositories" first, then every worktree.
 async function chooseHeaderWorktree(page: Page, option: string) {
   await page.getByRole("button", { name: "Switch worktree", exact: true }).click();
   const list = page.getByRole("dialog", { name: "Worktrees", exact: true });
   await (
-    option === "All worktrees"
+    option === "All repositories"
       ? // The option also carries the total change count.
-        list.getByRole("option", { name: /^All worktrees\b/ })
+        list.getByRole("option", { name: /^All repositories\b/ })
       : list.getByRole("option").filter({ hasText: option })
   )
     .first()
@@ -972,10 +972,10 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
   await page.goto("/tests/browser/workspace/project-workspace-navigation.html?worktrees=1");
   const panel = page.locator('[data-workspace-source-control="G:/wallet/api"]');
   await expect(panel).toBeVisible();
-  // The default scope is All worktrees: every worktree with uncommitted changes is a
-  // same-level section, the session's worktree first and open, the others collapsed.
+  // The default scope is All repositories: every worktree with uncommitted changes is a
+  // same-level section, the session's worktree first, and each one with changes open.
   await expect(page.getByRole("button", { name: "Switch worktree", exact: true })).toContainText(
-    "All worktrees",
+    "All repositories",
   );
   const overview = panel.locator("[data-checkout-overview]");
   await expect(overview.locator("[data-git-repository]")).toHaveCount(2);
@@ -987,8 +987,9 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
   );
   const task = overview.locator('[data-git-repository="G:/wallet-worktrees/task"]');
   const taskToggle = task.locator("header button[aria-expanded]").first();
-  await expect(taskToggle).toHaveAttribute("aria-expanded", "false");
-  await expect(task.getByText("same.ts", { exact: true })).not.toBeVisible();
+  // Worktrees with uncommitted changes open by default; only clean ones stay collapsed.
+  await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(task.getByText("same.ts", { exact: true })).toBeVisible();
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 800 });
     await expect
@@ -996,6 +997,9 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
       .toBe(true);
   }
   await taskToggle.focus();
+  await page.keyboard.press("Enter");
+  await expect(taskToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(task.getByText("same.ts", { exact: true })).not.toBeVisible();
   await page.keyboard.press("Enter");
   await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
   await task.getByText("same.ts", { exact: true }).click();
@@ -1007,7 +1011,7 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
   await chooseHeaderWorktree(page, "mc/task");
   await expect(overview).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Branch mc/task", exact: true })).toBeVisible();
-  await chooseHeaderWorktree(page, "All worktrees");
+  await chooseHeaderWorktree(page, "All repositories");
   await expect(overview.locator("[data-git-repository]")).toHaveCount(2);
   await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
   await expect(task.getByText("same.ts", { exact: true })).toBeVisible();

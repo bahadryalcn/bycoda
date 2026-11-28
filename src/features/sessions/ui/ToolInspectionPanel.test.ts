@@ -113,7 +113,9 @@ it("drops an approval's details when they only repeat the command", () => {
   const shell = (tool: Block["tool"]): Block => ({ id: "a", role: "tool", text: command, tool });
   const preview = { kind: "shell" as const, title: command };
   expect(approvalHasInspection(shell({ preview }), command)).toBe(false);
-  expect(approvalHasInspection(shell({ preview, detail: `Bash: ${command}` }), command)).toBe(false);
+  expect(approvalHasInspection(shell({ preview, detail: `Bash: ${command}` }), command)).toBe(
+    false,
+  );
   expect(
     approvalHasInspection(
       shell({ preview: { ...preview, inspection: { kind: "command", text: command } } }),

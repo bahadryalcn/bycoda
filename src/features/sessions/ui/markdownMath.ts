@@ -27,7 +27,10 @@ function guard(parent: MdNode) {
     if (fence !== 1) return;
     const after = children[index + 1];
     const tight =
-      !!value && !/^\s/.test(value) && !/\s$/.test(value) && !(after?.type === "text" && /^\d/.test(after.value ?? ""));
+      !!value &&
+      !/^\s/.test(value) &&
+      !/\s$/.test(value) &&
+      !(after?.type === "text" && /^\d/.test(after.value ?? ""));
     if (!tight) children[index] = { type: "text", value: `$${value}$` };
   });
 }

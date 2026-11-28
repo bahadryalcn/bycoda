@@ -392,7 +392,8 @@ export class SessionCatalog {
     const rows: SessionSummary[] = [];
     const ids = new Set<string>();
     for (const [key, segment] of this.segments) {
-      if (key !== PINNED) segments.set(key, { status: segment.status, loaded: segment.rows.length });
+      if (key !== PINNED)
+        segments.set(key, { status: segment.status, loaded: segment.rows.length });
       for (const row of segment.rows) {
         if (ids.has(row.id)) continue;
         ids.add(row.id);

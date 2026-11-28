@@ -70,9 +70,7 @@ it("shows only the checkbox on task list items and keeps nested bullets", async 
 });
 
 it("keeps the header strip hidden for an unlabeled fence until collapsed", () => {
-  expect(
-    css.replace(/\s+/g, " "),
-  ).toContain(
+  expect(css.replace(/\s+/g, " ")).toContain(
     '.markdown-code-resizable[data-collapsed="false"] .markdown-code-fallback-label:empty ~ [data-streamdown="code-block"] [data-streamdown="code-block-header"] { display: none; }',
   );
   expect(css).not.toMatch(/\.markdown-code-resizable\[data-collapsed\]\s/);
