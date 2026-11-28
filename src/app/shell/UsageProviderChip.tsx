@@ -88,6 +88,7 @@ import {
   loadRateLimits,
   useCachedRateLimits,
 } from "../../features/providers/model/rateLimitsCache";
+import { usageRenewalPending } from "../../features/providers/model/accountUsage";
 type UsageProviderChipProps = {
   limits: ProviderRateLimits;
   usageOnly?: boolean;
@@ -121,6 +122,9 @@ export function UsageProviderChip(props: UsageProviderChipProps) {
   const tooltip = windows
     .map((entry) => rateLimitWindowTooltipWith(entry.window, now, showRemaining, t, format))
     .join(" · ");
+  const errorNote = usageRenewalPending(limits)
+    ? t("Usage updates the next time this account is used.")
+    : limits.error;
   const providerLabel = presentation?.label ?? HARNESS_TITLE[limits.provider];
   const iconHarness = presentation?.harness ?? limits.provider;
   const activeAccount = accounts.find((account) => account.id === accountId);
@@ -139,7 +143,7 @@ export function UsageProviderChip(props: UsageProviderChipProps) {
         aria-haspopup="dialog"
         tooltip={
           tooltip ||
-          limits.error ||
+          errorNote ||
           (disconnected ? t("Not connected") : loading ? t("Loading usage…") : t("Usage details"))
         }
         onClick={() => setOpen((value) => !value)}
@@ -160,7 +164,7 @@ export function UsageProviderChip(props: UsageProviderChipProps) {
             {t("not connected")}
           </Text>
         ) : windows.length === 0 ? (
-          <UnknownUsageBar label={t("Usage unavailable")} detail={limits.error || undefined} />
+          <UnknownUsageBar label={t("Usage unavailable")} detail={errorNote || undefined} />
         ) : (
           <span className="flex min-w-0 items-center gap-2 tabular-nums">
             {windows.map((entry, index) => (
@@ -922,7 +926,11 @@ function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; load
         label={loading ? t("Loading usage…") : t("Usage unavailable")}
         loading={loading}
       />
-      {limits.error ? (
+      {usageRenewalPending(limits) ? (
+        <Text as="p" size="caption" tone="secondary">
+          {t("Usage updates the next time this account is used.")}
+        </Text>
+      ) : limits.error ? (
         <InlineError live="off" details={limits.error}>
           {t("Could not read the provider status.")}
         </InlineError>

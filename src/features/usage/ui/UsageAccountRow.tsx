@@ -15,6 +15,7 @@ import {
   type ProviderAccount,
 } from "../../providers/public/providerAccounts";
 import type { ProviderRateLimits } from "../../providers/public/rateLimitsCache";
+import { usageRenewalPending } from "../../providers/public/accountUsage";
 import { UsageProviderIdentity, usageProviderLabel } from "./UsageProviderIdentity";
 import { UsageQuotaWindows } from "./UsageQuotaWindows";
 
@@ -175,7 +176,11 @@ export function UsageAccountRow({
         showRemaining={showRemaining}
         color={color}
       />
-      {limits.error ? (
+      {usageRenewalPending(limits) ? (
+        <Text as="p" size="caption" tone="secondary">
+          {t("Usage updates the next time this account is used.")}
+        </Text>
+      ) : limits.error ? (
         <InlineError
           className="usage-account-error"
           details={limits.error}

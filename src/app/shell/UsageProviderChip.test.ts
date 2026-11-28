@@ -178,6 +178,26 @@ describe("UsageProviderChip", () => {
     expect(await openDetails()).toContain(limits.error);
     expect(dialog?.querySelector('[role="meter"]')).toBeNull();
   });
+  it("shows an idle Claude account's pending renewal as a note, not a failure", async () => {
+    const note = "Usage updates the next time this account is used.";
+    const limits: ProviderRateLimits = {
+      ...codexLimits(),
+      provider: "claude",
+      session: null,
+      weekly: null,
+      resetCredits: null,
+      status: "error",
+      error: "Claude usage will update when this account is used again",
+      renewalPending: true,
+    };
+    act(() => root.render(createElement(UsageProviderChip, { limits, now })));
+    const trigger = button("Claude Code usage details");
+    expect(await tooltipText(trigger)).toBe(note);
+    await act(async () => trigger.click());
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain(note);
+    expect(dialog?.textContent).not.toContain("Could not read the provider status.");
+  });
   it("keeps usage selections independent across providers with the same account ids", async () => {
     const onSelectAccount = vi.fn();
     for (const provider of PROVIDER_ACCOUNT_PROVIDERS) {

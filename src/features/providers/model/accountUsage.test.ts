@@ -341,12 +341,13 @@ describe("useProviderAccountUsage", () => {
 });
 
 describe("usageRenewalPending", () => {
-  it("flags only the idle-account renewal message, not real errors", () => {
+  it("flags only the idle-account renewal state, not real errors", () => {
     expect(
       usageRenewalPending(
         limits(null, null, {
           status: "error",
           error: "Claude usage will update when this account is used again",
+          renewalPending: true,
         }),
       ),
     ).toBe(true);

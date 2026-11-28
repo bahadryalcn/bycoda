@@ -215,10 +215,7 @@ export function useProviderAccountUsage(
   return { usage, now, refreshing: inflight > 0, refresh };
 }
 
-/** The host's note for an idle Claude account: usage is simply not known until it is used again. */
+/** An idle Claude account: usage is simply not known until it is used again. Not a failure. */
 export function usageRenewalPending(limits: ProviderRateLimits | undefined): boolean {
-  return (
-    limits?.status === "error" &&
-    Boolean(limits.error?.toLowerCase().includes("will update when this account is used"))
-  );
+  return limits?.status === "error" && limits.renewalPending === true;
 }
