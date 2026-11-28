@@ -426,8 +426,13 @@ test("model search windows large catalogs while narrowing and navigating", async
     await expect.poll(() => options.count()).toBeLessThan(50);
     await search.fill("Catalog 1");
     await expect.poll(() => options.count()).toBeLessThan(50);
-    await options.first().press("End");
-    await expect(panel.locator('[role="option"][aria-posinset="111"]')).toBeInViewport();
+    // End is idempotent: repeat it while a slow engine has not yet windowed the narrowed list.
+    await expect(async () => {
+      await options.first().press("End", { timeout: 2000 });
+      await expect(panel.locator('[role="option"][aria-posinset="111"]')).toBeInViewport({
+        timeout: 2000,
+      });
+    }).toPass({ timeout: 15_000 });
     await search.fill("Catalog 199");
     await expect(options).toHaveCount(1);
     await expect(options).toContainText("Catalog 199");

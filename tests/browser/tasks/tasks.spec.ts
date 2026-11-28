@@ -1283,9 +1283,13 @@ for (const width of [390, 768, 1440]) {
       const edit = await openEpicSettings(page);
       const form = formDialog(page, "Edit epic settings");
       await expect(form).toBeVisible();
-      await form.getByRole("button", { name: "About epic settings" }).click();
+      const about = form.getByRole("button", { name: "About epic settings" });
+      await about.click();
       await expect(page.getByText(/Applies to existing unfinished tasks/)).toBeVisible();
-      await page.keyboard.press("Escape");
+      // Toggle it closed instead of Escape: an Escape that beats the popover's key handler also
+      // closes the dialog underneath, which is not what this test is about.
+      await about.click();
+      await expect(page.getByText(/Applies to existing unfinished tasks/)).toBeHidden();
       await openOptions(form);
       await form
         .getByRole("spinbutton", { name: "Concurrent tasks in this epic", exact: true })

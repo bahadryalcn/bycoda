@@ -72,15 +72,27 @@ test("shell counts stay compact and follow custom accents in both rail presentat
       await page.goto(
         `/tests/browser/app-shell/compact-navigation.html?badgeCount=${count}${expanded ? "&expandedRail" : ""}`,
       );
-      const working = page.locator("[data-workspace-working-count]");
-      await expect(working).toHaveText(String(Math.min(count, 9)));
+      // The Sessions tab shows the compact accent count in both presentations; the compact
+      // rail's always-present Workspace action adds a solid xs badge (the expanded sidebar
+      // has no such action), so each count is checked against its own owner.
+      const sessionsTab = page.getByRole("tab", { name: /^Sessions, \d+ working sessions?$/ });
+      const working = sessionsTab.locator("[data-workspace-working-count]");
       const workingCount = Math.min(count, 9);
+      const workingLabel = `${workingCount} working ${workingCount === 1 ? "session" : "sessions"}`;
+      await expect(working).toHaveText(String(workingCount));
       // The badge is decorative; a screen-reader-only live region carries the meaning.
       await expect(working).toHaveAttribute("aria-hidden", "true");
-      await expect(page.getByText(/^\d+ working sessions?$/)).toHaveText(
-        `${workingCount} working ${workingCount === 1 ? "session" : "sessions"}`,
-      );
-      await expect(working.locator('[data-size="xs"][aria-hidden="true"]')).toBeVisible();
+      await expect(sessionsTab.getByText(/^\d+ working sessions?$/)).toHaveText(workingLabel);
+      const railAction = page.getByRole("button", { name: "Workspace", exact: true });
+      if (expanded) {
+        await expect(railAction).toHaveCount(0);
+      } else {
+        const railWorking = railAction.locator("[data-workspace-working-count]");
+        await expect(railWorking).toHaveText(String(workingCount));
+        await expect(railWorking).toHaveAttribute("aria-hidden", "true");
+        await expect(railWorking).toHaveAttribute("data-size", "xs");
+        await expect(railAction.getByText(/^\d+ working sessions?$/)).toHaveText(workingLabel);
+      }
       for (const light of [false, true]) {
         await page.evaluate((light) => {
           document.documentElement.classList.toggle("theme-light", light);

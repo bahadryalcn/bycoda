@@ -3,51 +3,37 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { TerminalTools, type TerminalTool } from "../../../src/features/terminal/ui/TerminalTools";
 import { RemoteShellSuggestionsOverlay } from "../../../src/features/terminal/ui/RemoteShellSuggestionsOverlay";
-import type {
-  SshShellController,
-  SshShellState,
-} from "../../../src/features/terminal/model/sshShellIntegration";
+import type { SshShellController } from "../../../src/features/terminal/model/sshShellIntegration";
 
 export function RemoteSuggestionsFixture() {
   const element = useRef<HTMLDivElement>(null);
   const [terminal, setTerminal] = useState<Terminal | null>(null);
-  const [snapshot, setSnapshot] = useState<SshShellState>();
+  const [previewEpoch, setPreviewEpoch] = useState(0);
   const [mode, setMode] = useState<TerminalTool>(null);
   const line = useRef("");
-  const refresh = () =>
-    setSnapshot({
-      id: "remote-fixture",
-      status: "suggestions",
-      shell: "bash",
-      user: "ubuntu",
-      host: "fixture",
-      requestId: "fixture-request",
-      prefix: line.current,
-      cursor: line.current.length,
-      suggestions: [
-        "clear",
-        "clear previous",
-        "clear older",
-        "git status",
-        "git stash list",
-      ].filter((value) => value.startsWith(line.current) && value !== line.current),
-    });
+  const unavailable = new URLSearchParams(location.search).has("failed");
+  // The prompt-time catalog the shell would have issued; the view filters it per keystroke.
+  const catalog = ["clear", "clear previous", "clear older", "git status", "git stash list"];
+  const matches = (prefix: string) =>
+    catalog.filter((value) => value.startsWith(prefix) && value !== prefix);
   useEffect(() => {
     const term = new Terminal({ cols: 70, rows: 20, fontSize: 14 });
     term.open(element.current!);
     term.write("ubuntu@fixture:~$ ", () => setTerminal(term));
+    // The remote echo arrives after the keystroke, as it does over SSH; xterm
+    // would otherwise parse a synchronous write before the view sees the edit.
+    const echo = (text: string) => queueMicrotask(() => term.write(text));
     const input = term.onData((data) => {
       if (data === "\r") {
         document.documentElement.dataset.remoteExecuted = line.current;
         line.current = "";
-        term.write("\r\nubuntu@fixture:~$ ");
-        setSnapshot(undefined);
+        echo("\r\nubuntu@fixture:~$ ");
       } else if (data === "\x7f") {
         line.current = line.current.slice(0, -1);
-        term.write("\b \b", refresh);
+        echo("\b \b");
       } else if (data.length && data.charCodeAt(0) >= 32) {
         line.current += data;
-        term.write(data, refresh);
+        echo(data);
       }
     });
     term.focus();
@@ -57,7 +43,7 @@ export function RemoteSuggestionsFixture() {
     };
   }, []);
   const shell: SshShellController = {
-    state: snapshot,
+    state: undefined,
     waiting: new URLSearchParams(location.search).has("waiting"),
     notice: new URLSearchParams(location.search).has("failed")
       ? "Remote shell integration is unavailable"
@@ -67,11 +53,22 @@ export function RemoteSuggestionsFixture() {
       : undefined,
     automatic: true,
     source: "commands",
-    request: async () => refresh(),
-    dismiss: () => setSnapshot(undefined),
+    request: async () => {},
+    dismiss: () => {
+      setPreviewEpoch((value) => value + 1);
+    },
     accept: async (value) => {
       terminal?.input(value.slice(line.current.length));
-      setSnapshot(undefined);
+    },
+    promptReady: !unavailable,
+    previewEpoch,
+    catalogMatches: matches,
+    catalogSelection: (prefix) =>
+      unavailable || prefix === null ? undefined : { prefix, suggestions: matches(prefix) },
+    selectFromCatalog: (prefix) => !unavailable && prefix !== null,
+    acceptCatalog: async (prefix, value) => {
+      terminal?.input(value.slice(prefix.length));
+      setPreviewEpoch((count) => count + 1);
     },
     invalidate: () => {},
     setAutomatic: () => {},
@@ -86,7 +83,6 @@ export function RemoteSuggestionsFixture() {
         if (event.ctrlKey && event.key === " ") {
           event.preventDefault();
           setMode("remote");
-          refresh();
         }
       }}
     >

@@ -244,11 +244,10 @@ test.describe("Inbox audit", () => {
               path: `temp/verification/inbox-complete-audit/github-issue-source-${theme}-${width}.png`,
               fullPage: true,
             });
-          if (provider === "jira") await expect(source).toContainText("**Preserve this draft**");
-          else
-            await expect(source).toHaveValue(
-              "**Preserve this draft**\n\n- Verify preview\n- Keep the original text",
-            );
+          // Every provider shares the Markdown editor, a contenteditable rather than a textarea,
+          // so the draft is read back from its text, not from an input value.
+          await expect(source).toContainText("**Preserve this draft**");
+          await expect(source).toContainText("Keep the original text");
           const writes = await page.evaluate(() =>
             (
               window as unknown as { jiraFixtureCalls: { command: string }[] }

@@ -64,8 +64,17 @@ export function RemoteShellSuggestions({
   useLayoutEffect(() => {
     host.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest" });
   }, [choice]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Move focus into the selection list; the popover's measuring frame is hidden and refuses focus, so retry for a few frames.
   useEffect(() => {
-    if (selectionMode) host.current?.focus();
+    if (!selectionMode) return;
+    let frame = 0;
+    const focusList = (attempt: number) => {
+      host.current?.focus();
+      if (document.activeElement !== host.current && attempt < 10)
+        frame = requestAnimationFrame(() => focusList(attempt + 1));
+    };
+    focusList(0);
+    return () => cancelAnimationFrame(frame);
   }, [snapshot?.requestId, selectionMode]);
   const close = () => {
     shell.dismiss();

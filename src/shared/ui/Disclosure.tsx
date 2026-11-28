@@ -120,14 +120,16 @@ export function Disclosure({
   const tone = toneProp ?? (compact ? "muted" : undefined);
   const innerRef = useRef<HTMLDetailsElement | null>(null);
   const controlled = open !== undefined;
-  const [, reassert] = useState(0);
+  const [tick, reassert] = useState(0);
 
   // Controlled: the DOM follows `open` after every render, so a native toggle the parent ignores
-  // (it never changes the prop) snaps back instead of leaving the element out of sync.
+  // (it never changes the prop) snaps back instead of leaving the element out of sync. It runs on
+  // a prop change or an ignored toggle only: an unrelated render between a click and its async
+  // toggle event must not close a row the owner just opened.
   useLayoutEffect(() => {
     const el = innerRef.current;
     if (el && controlled && el.open !== open) el.open = open;
-  });
+  }, [controlled, open, tick]);
 
   const setRef = (el: HTMLDetailsElement | null) => {
     innerRef.current = el;
@@ -205,7 +207,7 @@ export function Disclosure({
         }
         if (next === open) return;
         onOpenChange?.(next);
-        reassert((tick) => tick + 1);
+        reassert((count) => count + 1);
       }}
       data-variant={variant}
       data-interaction-tone={interactionTone}

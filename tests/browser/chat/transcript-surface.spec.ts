@@ -26,8 +26,12 @@ const open = async (page: Page, query: Record<string, string> = {}) => {
     await expect(groups.first()).toBeVisible();
     // Each click settles before the next, so a group is never toggled twice.
     for (let left = await groups.count(); left > 0; left -= 1) {
-      await groups.first().click();
-      await expect(groups).toHaveCount(left - 1);
+      // A click that lands while the wallpaper or fonts still shift the layout can miss, so click
+      // again only while the group is still closed; an opened group is never toggled twice.
+      await expect(async () => {
+        if ((await groups.count()) === left) await groups.first().click({ timeout: 1000 });
+        expect(await groups.count()).toBe(left - 1);
+      }).toPass({ timeout: 10_000 });
     }
     // The last click leaves the pointer on a row; its hover fill is not part of the resting state.
     await page.mouse.move(0, 0);

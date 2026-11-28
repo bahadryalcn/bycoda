@@ -17,7 +17,8 @@ for (const [theme, width] of ["dark", "light"].flatMap((theme) =>
       '[data-project-path="remote://fixture-office/fixture/bycoda"] [data-project-primary]',
     );
     await expect(project.locator("[data-truncate]").first()).toHaveText("bycoda");
-    await expect(project.locator("svg.lucide-server")).toBeVisible();
+    // The machine is marked by the connection dot on the logo; the server icon moved to the tooltip.
+    await expect(project.getByRole("img", { name: "Not connected" })).toBeVisible();
     const session = page.locator('[data-session-card="row-multi"]');
     await expect(session.locator("[data-session-row-project] [data-truncate]")).toHaveText(
       "bycoda",

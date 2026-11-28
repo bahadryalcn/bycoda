@@ -2098,12 +2098,13 @@ test("live browser controls retain readable spacing", async ({ page }, testInfo)
   }
 });
 
-test("the five sections render and switch by click and keyboard", async ({ page }) => {
+test("the six sections render and switch by click and keyboard", async ({ page }) => {
   await openSocial(page);
   const nav = sections(page);
   await expect(nav.getByRole("tab")).toHaveText([
     "Komut",
     "İçerik",
+    "Canlı yayın",
     "Hedef kitle",
     "Gelen kutusu",
     "Hesaplar ve Ayarlar",

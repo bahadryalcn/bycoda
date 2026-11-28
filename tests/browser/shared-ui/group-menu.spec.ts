@@ -112,6 +112,12 @@ test("preserves appearance controls and supports keyboard navigation", async ({ 
   await expect(root.getByRole("menuitem", { name: "Appearance", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(root.getByRole("menuitem", { name: "Move to group", exact: true })).toBeFocused();
+  // Placing rows come first (Move to group, Workspace file), then inspecting (Fetch all),
+  // then the arranging rows starting with Reorder group.
+  for (const label of ["Workspace file", "Fetch all"]) {
+    await page.keyboard.press("ArrowDown");
+    await expect(root.getByRole("menuitem", { name: label, exact: true })).toBeFocused();
+  }
   await page.keyboard.press("ArrowDown");
   await expect(root.getByRole("menuitem", { name: "Pin group", exact: true })).toHaveCount(0);
   await expect(root.getByRole("menuitem", { name: "Reorder group", exact: true })).toBeFocused();

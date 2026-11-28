@@ -202,6 +202,8 @@ export function SubagentAuditFixture() {
               delegatedRunOwner={parentId}
               modelSettings={parent.modelSettings}
               blocks={blocks}
+              // A pending advisor call reads "Thinking…" only while the turn is running.
+              busy={new URLSearchParams(location.search).has("advisor-pending")}
               onSaveNote={noop}
               onSendDraft={() => true}
               onEditDraft={() => true}

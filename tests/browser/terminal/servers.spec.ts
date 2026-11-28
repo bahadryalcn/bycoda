@@ -1587,13 +1587,13 @@ for (const theme of ["light", "dark"]) {
     expect(await writes()).toHaveLength(beforeAccept);
     await expect(input).toBeFocused();
     expect(await count()).toBe(0);
-    // Explicit selection mode is the one place that still asks the shell, once, on request.
+    // Explicit selection opens from the prompt catalog: no request chord reaches the shell.
     await page.keyboard.press("Control+Space");
     await expect(page.getByLabel("Remote suggestion selection", { exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(input).toBeFocused();
     const explicit = await count();
-    expect(explicit).toBe(1);
+    expect(explicit).toBe(0);
     // A busy or echo-off shell revokes the list until its next verified prompt.
     await emit("unavailable", false);
     for (let index = 0; index < 3; index++) await page.keyboard.press("Backspace");
