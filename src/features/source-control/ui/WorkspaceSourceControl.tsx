@@ -132,10 +132,11 @@ export function WorkspaceSourceControl({
     (changedRoots.length
       ? changedRoots.some((root) => same(root, path))
       : same(path, sectionRoots[0] ?? ""));
-  // Only open sections are scanned for child repositories: a collapsed clean worktree costs
-  // one status read, not a directory walk.
+  // Only open sections, and those the user collapsed by hand, are scanned for child
+  // repositories: a collapsed-by-default clean worktree costs one status read, not a directory
+  // walk, while collapsing a parent never hides its child repositories (they are own sections).
   const discoveryRoots = checkouts
-    ? sectionRoots.filter(rowOpen)
+    ? sectionRoots.filter((path) => rowOpen(path) || expanded[projectKey(path)] === false)
     : selected === cwd
       ? [...paths, cwd]
       : paths;

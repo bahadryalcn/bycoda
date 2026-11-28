@@ -20,6 +20,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import {
+  CheckCircle,
   FileDiff,
   GitBranch,
   ListFilter,
@@ -1584,8 +1585,8 @@ function ChangedFiles({
             <EmptyState
               context={fill ? "page" : "panel"}
               className={fill ? "h-full" : undefined}
-              illustration={diverged ? false : "success"}
-              icon={diverged ? <GitBranch /> : undefined}
+              illustration={false}
+              icon={diverged ? <GitBranch /> : <CheckCircle tone="success" />}
               title={diverged ? undefined : t("All clean")}
               description={
                 diverged

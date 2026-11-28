@@ -472,6 +472,12 @@ it("runs child-repository discovery only for the open sections", async () => {
   await act(async () => text("/t/idle").querySelector("button")!.click());
   expect(discover).toHaveBeenLastCalledWith(["/t/mine", "/t/work", "/t/idle"], true, true);
 });
+it("keeps a parent's child repositories listed after the parent is collapsed", async () => {
+  await renderCheckouts();
+  await act(async () => text("/t/mine").querySelector("button")!.click());
+  expect(expandedOf("/t/mine")).toBe("false");
+  expect(discover).toHaveBeenLastCalledWith(["/t/mine", "/t/work"], true, true);
+});
 it("opens only the session worktree when no worktree has uncommitted changes", async () => {
   await renderCheckouts("/t/mine/src", cleanTrees);
   expect(mounted()).toEqual(["/t/mine", "/repo", "/t/work", "/t/idle", "/t/idle2"]);
