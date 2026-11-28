@@ -46,6 +46,10 @@
             scheme === "light"
               ? "/brand/bycoda/mark-tea-red-loading-light.svg"
               : "/brand/bycoda/mark-tea-red-loading.svg";
+          window.__bootWordmark =
+            scheme === "light"
+              ? "/brand/bycoda/wordmark-full-dark.svg"
+              : "/brand/bycoda/wordmark-white.svg";
           var bodyGlass = localStorage.getItem("bycoda.bodyGlass");
           if (bodyGlass == null || bodyGlass === "1" || bodyGlass === "true") {
             root.classList.add("glass-body");
@@ -88,8 +92,10 @@
         inset: 0;
         z-index: 2147483647;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 16px;
         pointer-events: none;
         transition: opacity 0.16s ease;
       }
@@ -104,14 +110,22 @@
         object-fit: contain;
         display: block;
       }
+
+      #boot-splash img#boot-wordmark {
+        inline-size: 120px;
+        block-size: 24px;
+      }
     </style>
   </head>
   <body>
     <div id="boot-splash" aria-hidden="true">
       <img id="boot-logo" src="/brand/bycoda/mark-tea-red-loading.svg" alt="" />
+      <img id="boot-wordmark" src="/brand/bycoda/wordmark-white.svg" alt="" />
     </div>
     <script>
       if (window.__bootLogo) document.getElementById("boot-logo").src = window.__bootLogo;
+      if (window.__bootWordmark)
+        document.getElementById("boot-wordmark").src = window.__bootWordmark;
     </script>
     <div id="root"></div>
     <script type="module" src="/apps/desktop/src/main.ts"></script>

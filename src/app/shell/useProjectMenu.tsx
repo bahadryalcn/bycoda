@@ -164,6 +164,18 @@ type Options = {
 export type ProjectMenuMove = { up?: () => void; down?: () => void };
 
 /**
+ * Joins menu sections with one separator between non-empty sections. The menu itself already
+ * separates the first section from the items above it.
+ */
+export function separateSections(sections: TabGroupMenuExtraItem[][]): TabGroupMenuExtraItem[] {
+  return sections
+    .filter((section) => section.length > 0)
+    .flatMap((section, index) =>
+      index === 0 ? section : [{ ...section[0], sepBefore: true }, ...section.slice(1)],
+    );
+}
+
+/**
  * Right-click menu for a project: appearance, groups, pinning, editors,
  * notifications, and removal. Shared by the project rail and the project
  * pickers shown while the rail is hidden. Every change lands in storage,
@@ -854,7 +866,6 @@ export function useProjectMenu({
               return t("Fetch all");
             },
             icon: ArrowDownCircle,
-            sepBefore: true,
           },
           {
             id: "delete-project-group",
@@ -960,55 +971,58 @@ export function useProjectMenu({
         }
         footer={menuFooter ?? undefined}
         compactAppearance
-        extraItems={[
-          ...(workspaceRoot && !locked
-            ? [
-                {
-                  id: "workspace-parent",
-                  label: t("Move to group"),
-                  icon: FolderPlus,
-                  submenu: [
-                    { kind: "item" as const, id: "workspace-parent:new", label: t("New group…") },
-                    { kind: "sep" as const },
-                    ...workspaceDestinations.map((item) => ({
-                      kind: "item" as const,
-                      id: `workspace-parent:${item.id}`,
-                      label: item.name,
-                      checked: item.id === parentId,
-                    })),
-                  ],
-                },
-              ]
-            : []),
-          branch("order", t("Reorder group"), ArrowUp, moveItems),
-          groupKindItem(group),
-          ...lockItems.filter((item) => item.id === "lock-group" || item.id === "unlock-group"),
-          branch("privacy", t("Group privacy"), Lock, privacyItems),
-          ...groupItems.filter((item) => item.id === "add-project-to-group"),
-          ...(group.workspaceFile && !locked
-            ? [
-                branch(
-                  "workspace",
-                  t("Workspace file"),
-                  FolderOpen,
-                  groupItems.filter((item) => item.id.startsWith("workspace-")),
-                ),
-              ]
-            : []),
-          ...(!locked && groupMenu.onOpenGitOverview
-            ? [{ id: "git-overview", label: t("Source Control"), icon: GitBranch }]
-            : []),
-          ...groupItems.filter((item) => item.id === "fetch-all"),
-          ...(!locked
-            ? [
-                {
-                  ...branch("delete", t("Delete"), Trash2, deleteItems),
-                  danger: true,
-                  sepBefore: true,
-                },
-              ]
-            : []),
-        ]}
+        extraItems={separateSections([
+          // Placing, then inspecting, then arranging and protecting, then deleting.
+          [
+            ...groupItems.filter((item) => item.id === "add-project-to-group"),
+            ...(workspaceRoot && !locked
+              ? [
+                  {
+                    id: "workspace-parent",
+                    label: t("Move to group"),
+                    icon: FolderPlus,
+                    submenu: [
+                      {
+                        kind: "item" as const,
+                        id: "workspace-parent:new",
+                        label: t("New group…"),
+                      },
+                      { kind: "sep" as const },
+                      ...workspaceDestinations.map((item) => ({
+                        kind: "item" as const,
+                        id: `workspace-parent:${item.id}`,
+                        label: item.name,
+                        checked: item.id === parentId,
+                      })),
+                    ],
+                  },
+                ]
+              : []),
+            ...(group.workspaceFile && !locked
+              ? [
+                  branch(
+                    "workspace",
+                    t("Workspace file"),
+                    FolderOpen,
+                    groupItems.filter((item) => item.id.startsWith("workspace-")),
+                  ),
+                ]
+              : []),
+          ],
+          [
+            ...(!locked && groupMenu.onOpenGitOverview
+              ? [{ id: "git-overview", label: t("Source Control"), icon: GitBranch }]
+              : []),
+            ...groupItems.filter((item) => item.id === "fetch-all"),
+          ],
+          [
+            branch("order", t("Reorder group"), ArrowUp, moveItems),
+            groupKindItem(group),
+            ...lockItems.filter((item) => item.id === "lock-group" || item.id === "unlock-group"),
+            branch("privacy", t("Group privacy"), Lock, privacyItems),
+          ],
+          !locked ? [{ ...branch("delete", t("Delete"), Trash2, deleteItems), danger: true }] : [],
+        ])}
         onExtraPick={(action) => {
           if (action === "git-overview") {
             if (getGroupLockView().lock.lockedGroupIds.has(group.id)) return false;

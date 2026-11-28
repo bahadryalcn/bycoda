@@ -21,7 +21,9 @@ type Entry = {
 };
 const signature = (entry: Entry) =>
   JSON.stringify([entry.value.models, entry.value.errors, [...entry.pending].sort()]);
-const MAX_AGE_MS = 5 * 60_000;
+// Discovery spawns every provider CLI, so an unchanged CLI is re-probed hourly; a binary change,
+// an explicit refresh or a failed provider's backoff probes sooner.
+const MAX_AGE_MS = 60 * 60_000;
 const PREVIEW_WAIT_MS = 150;
 const RETRY_MS = 30_000;
 const MAX_ENTRIES = 32;

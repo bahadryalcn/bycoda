@@ -174,11 +174,14 @@ it("refreshes after the TTL and isolates project caches and explicit invalidatio
   const discover = vi.fn(async (_provider: string, cwd: string) => [model(cwd)]);
   const cache = new ModelCatalogCache(["codex"], async () => "v1", discover);
   await cache.read("/a");
-  await vi.advanceTimersByTimeAsync(4 * 60_000);
+  await vi.advanceTimersByTimeAsync(29 * 60_000);
+  await cache.read("/a");
+  await cache.read("/b");
+  await vi.advanceTimersByTimeAsync(29 * 60_000);
   await cache.read("/a");
   await cache.read("/b");
   expect(discover).toHaveBeenCalledTimes(2);
-  await vi.advanceTimersByTimeAsync(60_000);
+  await vi.advanceTimersByTimeAsync(2 * 60_000);
   await cache.read("/a");
   expect(discover).toHaveBeenCalledTimes(3);
   cache.clear();

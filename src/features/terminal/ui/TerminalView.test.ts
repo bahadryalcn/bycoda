@@ -31,6 +31,8 @@ const assistance = vi.hoisted(() => ({
   promptReady: true,
   previewEpoch: 0,
   catalogMatches: vi.fn((): string[] => []),
+  catalogSelection: vi.fn(() => undefined),
+  selectFromCatalog: vi.fn(() => false),
   acceptCatalog: vi.fn(async () => {}),
 }));
 const assistanceUpdates = new Set<() => void>();

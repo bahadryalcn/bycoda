@@ -24,20 +24,30 @@ __bycoda_echo() {
     [[ " $mode " != *" -echo "* ]]
 }
 typeset -g __bycoda_catalog_path=
+typeset -g __bycoda_catalog_histcmd=
+typeset -g __bycoda_catalog_tried=
+typeset -gi __bycoda_catalog_tries=0
 # Prompt-time candidates. The view filters them on every keystroke, so no ZLE
 # widget runs (and the line is never redrawn) while typing.
 __bycoda_catalog() {
     emulate -L zsh
     local candidate values='' count=0
     local -A seen
-    for candidate in "${(@f)$(builtin fc -rln -200 2>/dev/null)}"; do
-        [[ -n $candidate && $candidate != ' '* && $candidate != -* ]] && __bycoda_literal "$candidate" && [[ -z ${seen[$candidate]-} ]] || continue
-        seen[$candidate]=1; values+="$candidate"$'\t'; (( ++count >= 100 )) && break
-    done
-    __bycoda_emit "catalog;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;history;$values"
-    # Command names change only with PATH; the shell keeps the last list.
+    # Each list is re-sent only when it changed (the native side keeps the last
+    # one) and marked current only after its emit, so an interrupted build retries.
+    if [[ $HISTCMD != "$__bycoda_catalog_histcmd" ]]; then
+        for candidate in "${(@f)$(builtin fc -rln -200 2>/dev/null)}"; do
+            [[ -n $candidate && $candidate != ' '* && $candidate != -* ]] && __bycoda_literal "$candidate" && [[ -z ${seen[$candidate]-} ]] || continue
+            seen[$candidate]=1; values+="$candidate"$'\t'; (( ++count >= 100 )) && break
+        done
+        __bycoda_emit "catalog;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;history;$values"
+        __bycoda_catalog_histcmd=$HISTCMD
+    fi
+    # Command names change only with PATH. A build interrupted by Ctrl+C is
+    # retried, but a PATH too slow to enumerate stops holding the prompt.
     [[ $PATH == "$__bycoda_catalog_path" ]] && return
-    __bycoda_catalog_path=$PATH
+    [[ $PATH == "$__bycoda_catalog_tried" ]] || { __bycoda_catalog_tried=$PATH; __bycoda_catalog_tries=0; }
+    (( __bycoda_catalog_tries++ >= 3 )) && { __bycoda_catalog_path=$PATH; return; }
     builtin rehash
     seen=(); values=''; count=0
     for candidate in 'git status' 'git diff' 'git diff --staged' 'git log --oneline' 'git stash list' 'ls -l' 'ls -la' 'docker ps' 'docker ps -a' 'docker compose up' 'docker compose logs -f' 'systemctl status' 'systemctl restart' 'pnpm install' 'pnpm dev' 'pnpm build' 'pnpm test' 'npm install' 'npm run dev' 'cargo check' 'cargo test'; do
@@ -48,6 +58,7 @@ __bycoda_catalog() {
         seen[$candidate]=1; values+="$candidate"$'\t'; (( ++count >= 3900 )) && break
     done
     __bycoda_emit "catalog;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;commands;$values"
+    __bycoda_catalog_path=$PATH
 }
 __bycoda_prompt() {
     local __bycoda_exit=$?

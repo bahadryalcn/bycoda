@@ -1144,32 +1144,6 @@ export async function listRecentSessionsSince(since: number): Promise<SessionSum
   ].map(normalizeSummary);
 }
 
-export type RecentSessionCursor = { activityAt: number; id: string; revision: number };
-export async function listRecentSessionsSincePage(
-  since: number,
-  cursor: RecentSessionCursor | null,
-): Promise<{ rows: SessionSummary[]; nextCursor: RecentSessionCursor | null }> {
-  const page = await invoke<{ rows: SessionSummary[]; nextCursor: RecentSessionCursor | null }>(
-    "session_list_recent_since_page",
-    { since, cursor },
-  );
-  return {
-    rows: page.rows.filter((row) => !hasHostSessionOwnerFence(row.id)).map(normalizeSummary),
-    nextCursor: page.nextCursor,
-  };
-}
-
-/** Recheck ownership at publication because bindings may change between pages. */
-export function finalizeRecentSessionPages(
-  rows: SessionSummary[],
-  since: number,
-): SessionSummary[] {
-  return [
-    ...rows.filter((row) => !hasHostSessionOwnerFence(row.id)),
-    ...hostSessionShellSummaries().filter((row) => summaryActivityAt(row) >= since),
-  ].map(normalizeSummary);
-}
-
 export type SessionSearchHit = {
   kind: "conversation" | "message";
   sessionId: string;
@@ -2737,7 +2711,7 @@ function sanitizeTaskList(value: unknown): TaskListMeta | null {
   };
 }
 
-function normalizeSummary(summary: SessionSummary): SessionSummary {
+export function normalizeSummary(summary: SessionSummary): SessionSummary {
   const linkedWorkItem = sanitizeLinkedWorkItem(summary.linkedWorkItem);
   const { managedBy: rawManagement, ...rest } = summary;
   const managedBy = assistantSessionManagement(rawManagement);

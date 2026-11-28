@@ -1,4 +1,5 @@
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { BYCODA_ACTION_LABELS as ACTION_LABELS } from "../../../shared/model/bycodaConversationLabels";
 import type { Block } from "./session";
 
 export type BycodaToolCall = {
@@ -12,7 +13,13 @@ export function delegationToolKind(
   block: Block,
 ): "delegate" | "wait" | "reply" | "consult" | undefined {
   if (block.role !== "tool") return undefined;
-  for (const value of [block.tool?.title, block.tool?.preview?.title, block.text]) {
+  // The title may be the delegated task; the kind and preview keep the tool's own name.
+  for (const value of [
+    block.tool?.title,
+    block.tool?.kind,
+    block.tool?.preview?.title,
+    block.text,
+  ]) {
     const kind = value
       ?.trim()
       .match(/(?:^|[:_.])agents[_.](delegate|wait|reply|consult)$/i)?.[1]
@@ -21,35 +28,6 @@ export function delegationToolKind(
       return kind;
   }
   return undefined;
-}
-
-const ACTION_LABELS: Record<string, string> = {
-  "models.list": "List models",
-  "sessions.list": "List sessions",
-  "sessions.read": "Read a session",
-  "sessions.send": "Continue a session",
-  "sessions.wait": "Wait for a session",
-  "sessions.draft": "Save a draft",
-  "sessions.start": "Start a session",
-  "folders.list": "List folders",
-  "folders.move": "Move a session",
-  "notes.list": "List notes",
-  "notes.read": "Read a note",
-  "notes.write": "Write a note",
-  "agents.options": "List delegate models",
-  "agents.delegate": "Start a subagent",
-  "agents.consult": "Ask the advisor",
-  "agents.reply": "Continue a session",
-  "agents.wait": "Wait for a subagent",
-  "agents.cancel": "Cancel a subagent",
-  "agents.list": "Subagents",
-  "agents.send": "Send message",
-};
-
-/** Known MCP titles from the Bycoda conversation server. Keep other tool names intact. */
-export function bycodaConversationLabel(title: string | undefined): string | undefined {
-  const match = title?.match(/^bycoda-conversation:(?:conversation_)?agents[_.](\w+)$/);
-  return match ? ACTION_LABELS[`agents.${match[1]}`] : undefined;
 }
 
 /** Conservatively parse one shell invocation; compound commands use the shell row. */

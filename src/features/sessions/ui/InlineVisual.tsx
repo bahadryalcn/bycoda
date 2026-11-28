@@ -35,6 +35,18 @@ const readScheme = () => ({
   theme: readTheme(),
 });
 
+/** The app's scheme and theme values for a sandboxed visual, refreshed when the scheme changes. */
+export function useInlineVisualScheme() {
+  const [scheme, setScheme] = useState(readScheme);
+  // Re-reads the theme tokens when the app scheme changes, so an open visual follows it.
+  useEffect(() => {
+    const update = () => setScheme(readScheme());
+    window.addEventListener(SCHEME_CHANGE_EVENT, update);
+    return () => window.removeEventListener(SCHEME_CHANGE_EVENT, update);
+  }, []);
+  return scheme;
+}
+
 /** The snapshot has no file authority: relative resources cannot be resolved. */
 export function InlineVisual({ snapshot }: { snapshot: InlineVisualValue }) {
   const t = useT();
@@ -116,12 +128,7 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
     }
     previousView.current = view;
   }, [view]);
-  const [scheme, setScheme] = useState(readScheme);
-  useEffect(() => {
-    const update = () => setScheme(readScheme());
-    window.addEventListener(SCHEME_CHANGE_EVENT, update);
-    return () => window.removeEventListener(SCHEME_CHANGE_EVENT, update);
-  }, []);
+  const scheme = useInlineVisualScheme();
   const source = sandboxedInlineVisual(valid.html, scheme.dark, scheme.theme);
   const controls = (location: View) => (
     <>

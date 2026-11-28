@@ -8,10 +8,6 @@ import {
 } from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
-import {
-  setLiveStreamPageOpen,
-  useLiveStreamPageOpen,
-} from "../../../features/live-stream/public/liveStreamPage";
 import type { AuxiliaryToolId } from "../../model/toolWindows";
 import { workspaceActiveTool } from "../layout/workspaceActiveTool";
 
@@ -29,7 +25,6 @@ type View =
   | "search"
   | "servers"
   | "crews"
-  | "live-stream"
   | "inbox"
   | "notes"
   | "social"
@@ -74,14 +69,12 @@ const sameVisit = (a: Visit, b: Visit) =>
 /** One chronological history per mounted window. Never share or persist this stack. */
 export function useRailNavigation(d: RailNavigationDeps) {
   const crewsOpen = useCrewsPageOpen();
-  const liveStreamOpen = useLiveStreamPageOpen();
   const view: View = d.settingsOpen
     ? "settings"
     : d.searchViewOpen
       ? "search"
       : (workspaceActiveTool({
           crewsOpen,
-          liveStreamOpen,
           auxiliaryTool: d.auxiliaryTool,
           automationsViewOpen: d.automationsViewOpen,
           serversViewOpen: d.serversViewOpen,
@@ -161,7 +154,6 @@ export function useRailNavigation(d: RailNavigationDeps) {
     d.setServersViewOpen(visit.view === "servers");
     // Closing Servers closed Crews; reopen it only for a Crews visit.
     setCrewsPageOpen(visit.view === "crews");
-    setLiveStreamPageOpen(visit.view === "live-stream");
     d.setInboxViewOpen(visit.view === "inbox");
     d.setNotesViewOpen(visit.view === "notes");
     d.setAutomationsViewOpen(

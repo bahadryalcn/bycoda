@@ -14,16 +14,17 @@ creates a blank vault; repair storage or restore the correct key before retrying
 
 ## Screens
 
-The Social workspace has five screens. The shell keeps the AI stop control and the
+The Social workspace has six screens. The shell keeps the AI stop control and the
 connection/project filters visible on each of them.
 
-| Screen   | Purpose                                                                                                                                                                  |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Command  | Attention queue, "Waiting for you" items that need the owner (browser checkpoints, approvals), activity feed, AI stop and resume.                                        |
-| Content  | Drafts and approved content for each account, with a Repeat control for recurring publication and AI programs.                                                           |
-| Audience | People, lists, segments, capture rules, sequences and enrollments, the person panel (handles, interactions, consent record, delete and export), and import.              |
-| Inbox    | Unified conversations and comments across accounts, with status, timeline, reply options and auto-refresh.                                                               |
-| Accounts | Connections, account type and driver, per-account permissions, the autonomy policy, the browser section (visibility, live view, NEEDS_HUMAN), and the AI model settings. |
+| Screen         | Purpose                                                                                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Command        | Attention queue, "Waiting for you" items that need the owner (browser checkpoints, approvals), activity feed, AI stop and resume.                                        |
+| Content        | Drafts and approved content for each account, with a Repeat control for recurring publication and AI programs.                                                           |
+| Live streaming | OBS setup, going live on Social accounts, and TikTok LIVE intake for this computer; see [Live streaming](../guides/live-stream.md).                                      |
+| Audience       | People, lists, segments, capture rules, sequences and enrollments, the person panel (handles, interactions, consent record, delete and export), and import.              |
+| Inbox          | Unified conversations and comments across accounts, with status, timeline, reply options and auto-refresh.                                                               |
+| Accounts       | Connections, account type and driver, per-account permissions, the autonomy policy, the browser section (visibility, live view, NEEDS_HUMAN), and the AI model settings. |
 
 When the browser queue cannot refresh, Command shows the failure with a retry if the last list was empty.
 

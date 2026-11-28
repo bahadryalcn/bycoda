@@ -20,22 +20,32 @@ else
         [[ " $mode " != *" -echo "* ]]
     }
     __bycoda_catalog_path=
+    __bycoda_catalog_histcmd=
+    __bycoda_catalog_tried=
+    __bycoda_catalog_tries=0
     # Prompt-time candidates. The view filters them on every keystroke, so no
-    # key binding runs (and readline never redraws the line) while typing.
+    # key binding runs (and readline never redraws the line) while typing. Each
+    # list is re-sent only when it changed (the native side keeps the last one)
+    # and marked current only after its emit, so an interrupted build retries.
     __bycoda_catalog() {
         local candidate values='' count=0 i
         local -a recent
         local -A seen
-        mapfile -t recent < <(HISTTIMEFORMAT= builtin history 200 2>/dev/null)
-        for (( i=${#recent[@]}-1; i>=0; i-- )); do
-            candidate=${recent[i]#*[0-9]  }
-            [[ -n $candidate && $candidate != ' '* && $candidate != -* ]] && __bycoda_literal "$candidate" && [[ -z ${seen[$candidate]-} ]] || continue
-            seen[$candidate]=1; values+="$candidate"$'\t'; (( ++count >= 100 )) && break
-        done
-        __bycoda_emit "catalog;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;history;$values"
-        # Command names change only with PATH; the shell keeps the last list.
+        if [[ $HISTCMD != "$__bycoda_catalog_histcmd" ]]; then
+            mapfile -t recent < <(HISTTIMEFORMAT= builtin history 200 2>/dev/null)
+            for (( i=${#recent[@]}-1; i>=0; i-- )); do
+                candidate=${recent[i]#*[0-9]  }
+                [[ -n $candidate && $candidate != ' '* && $candidate != -* ]] && __bycoda_literal "$candidate" && [[ -z ${seen[$candidate]-} ]] || continue
+                seen[$candidate]=1; values+="$candidate"$'\t'; (( ++count >= 100 )) && break
+            done
+            __bycoda_emit "catalog;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;history;$values"
+            __bycoda_catalog_histcmd=$HISTCMD
+        fi
+        # Command names change only with PATH. A build interrupted by Ctrl+C is
+        # retried, but a PATH too slow to enumerate stops holding the prompt.
         [[ $PATH == "$__bycoda_catalog_path" ]] && return
-        __bycoda_catalog_path=$PATH
+        [[ $PATH == "$__bycoda_catalog_tried" ]] || { __bycoda_catalog_tried=$PATH; __bycoda_catalog_tries=0; }
+        (( __bycoda_catalog_tries++ >= 3 )) && { __bycoda_catalog_path=$PATH; return; }
         local -a names
         local -A known
         if [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]]; then
@@ -55,6 +65,7 @@ else
             seen[$candidate]=1; values+="$candidate"$'\t'; (( ++count >= 3900 )) && break
         done
         __bycoda_emit "catalog;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;commands;$values"
+        __bycoda_catalog_path=$PATH
     }
     __bycoda_prompt() {
         local __bycoda_exit=$?

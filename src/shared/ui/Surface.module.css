@@ -582,13 +582,14 @@ button.appearance[data-surface-frame="card"] {
   background: var(--ui-drop-blocked);
 }
 
+/* Diff line rows: a tint, so the code on them keeps its own colors and stays readable. */
 .surface[data-surface-variant="diff-add"],
 .appearance[data-surface-variant="diff-add"] {
-  background: var(--color-diff-add);
+  background: var(--color-diff-add-bg);
 }
 .surface[data-surface-variant="diff-delete"],
 .appearance[data-surface-variant="diff-delete"] {
-  background: var(--color-diff-del);
+  background: var(--color-diff-del-bg);
 }
 
 .surface[data-surface-ring="panel-outer"],

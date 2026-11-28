@@ -654,6 +654,8 @@ export function TerminalView({
         // or workspace search handlers consume them.
         event.preventDefault();
         event.stopPropagation();
+        // A held chord would reopen the list on every auto-repeat.
+        if (event.repeat) return;
         if (
           next === "command" &&
           (!ptyRuntimeRef.current?.spawned || termRef.current?.buffer.active.type === "alternate")

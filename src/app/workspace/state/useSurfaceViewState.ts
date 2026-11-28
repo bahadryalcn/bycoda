@@ -1,10 +1,6 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
-import {
-  setLiveStreamPageOpen,
-  useLiveStreamPageOpen,
-} from "../../../features/live-stream/public/liveStreamPage";
 import type { AuxiliaryToolId, ToolWindow } from "../../model/toolWindows";
 
 export interface SurfaceViewStateDeps {
@@ -38,13 +34,11 @@ export function useSurfaceViewFlags({ toolWindow }: SurfaceViewStateDeps) {
 /** Notes, automations and the task/social board flags. */
 export function useSurfaceBoardFlags({ toolWindow }: SurfaceViewStateDeps) {
   const [serversOpen, setServersOpen] = useState(toolWindow?.active === "servers");
-  // These pages share the Servers page's exclusions and close paths.
+  // This page shares the Servers page's exclusions and close paths.
   const crewsViewOpen = useCrewsPageOpen();
-  const liveStreamViewOpen = useLiveStreamPageOpen();
-  const serversViewOpen = serversOpen || crewsViewOpen || liveStreamViewOpen;
+  const serversViewOpen = serversOpen || crewsViewOpen;
   const setServersViewOpen: Dispatch<SetStateAction<boolean>> = useCallback((value) => {
     setCrewsPageOpen(false);
-    setLiveStreamPageOpen(false);
     setServersOpen(value);
   }, []);
   const [notesViewOpen, setNotesViewOpen] = useState(

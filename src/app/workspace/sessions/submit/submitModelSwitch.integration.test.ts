@@ -277,7 +277,7 @@ async function submit(
 it("dispatches two projectless sends using scratch without reading the Host workspace policy", async () => {
   const session = {
     ...newSession("antigravity", "~"),
-    model: "antigravity:gemini-3.8-flash-high",
+    model: "antigravity:gemini-3.8-flash",
   };
   const scratchCwd = `~/.bycoda-host/scratch/session-${session.id}`;
   resetSessionsStore([session]);
@@ -320,7 +320,7 @@ it("dispatches two projectless sends using scratch without reading the Host work
 it.each([false, true])("sends a projectless turn in scratch (retry: %s)", async (retrying) => {
   const original = {
     ...newSession("antigravity", "~"),
-    model: "antigravity:gemini-3.8-flash-high",
+    model: "antigravity:gemini-3.8-flash",
     blocks: retrying
       ? [
           {
@@ -356,7 +356,7 @@ it.each([false, true])("sends a projectless turn in scratch (retry: %s)", async 
 it("retries a transient first-send preparation failure in Current after persistence reload", async () => {
   const original = {
     ...newSession("antigravity", "/repo"),
-    model: "antigravity:gemini-3.8-flash-high",
+    model: "antigravity:gemini-3.8-flash",
   };
   resetSessionsStore([original]);
   vi.mocked(getWorkspaceCapabilities).mockRejectedValueOnce(
@@ -433,7 +433,7 @@ it("admits a managed native provider only after its accepted boundary is durable
 it("sends a long Turkish request after a switch without echoing it into handoff history", async () => {
   const original = getSessions()[0];
   await act(async () =>
-    actions.onModelChange(original.id, "antigravity", "antigravity:gemini-3.8-flash-high"),
+    actions.onModelChange(original.id, "antigravity", "antigravity:gemini-3.8-flash"),
   );
   const request = "İş akışını ve önceki değişiklikleri koruyarak devam et. ".repeat(600).trim();
   expect(new TextEncoder().encode(request).length).toBeGreaterThan(20_000);
@@ -451,14 +451,14 @@ it("continues a tiny-window send with an informational saved-history notice", as
   const original = getSessions()[0];
   setHarnessModels("antigravity", [
     {
-      id: "antigravity:gemini-3.8-flash-high",
+      id: "antigravity:gemini-3.8-flash",
       harness: "antigravity",
       name: "Tiny discovered target",
       contextWindow: 32,
     },
   ]);
   await act(async () =>
-    actions.onModelChange(original.id, "antigravity", "antigravity:gemini-3.8-flash-high"),
+    actions.onModelChange(original.id, "antigravity", "antigravity:gemini-3.8-flash"),
   );
   const request = "Continue my work despite the handoff capacity estimate";
   await submit("completed", {}, request);
@@ -481,7 +481,7 @@ it("runs three worktree sends without managed turn calls or forced managed retir
     {
       ...getSessions()[0],
       harness: "antigravity",
-      model: "antigravity:gemini-3.8-flash-high",
+      model: "antigravity:gemini-3.8-flash",
       workspaceId: "managed",
       worktreeCwd: "/owned/worktree",
     },
@@ -573,7 +573,7 @@ describe("actual desktop model-picker to submit routing", () => {
     const original = { ...getSessions()[0], busy: true, providerSessionId: undefined };
     resetSessionsStore([original]);
     await act(async () =>
-      actions.onModelChange(original.id, "antigravity", "antigravity:gemini-3.8-flash-high"),
+      actions.onModelChange(original.id, "antigravity", "antigravity:gemini-3.8-flash"),
     );
     expect(getSessions()[0].runningModelTarget?.harness).toBe("codex");
     ctx.enqueueHarnessEvent(original.id, {
@@ -588,7 +588,7 @@ describe("actual desktop model-picker to submit routing", () => {
     ctx.flushHarnessEvents();
     const switched = getSessions()[0];
     expect(switched.harness).toBe("antigravity");
-    expect(switched.model).toBe("antigravity:gemini-3.8-flash-high");
+    expect(switched.model).toBe("antigravity:gemini-3.8-flash");
     expect(switched.providerSessionId).toBeUndefined();
     expect(switched.pendingSwitch?.fromProviderSessionId).toBe("late-codex-thread");
     expect(switched.pendingSwitch?.fromModel).toBe("codex:gpt-6.1-sol");
@@ -599,7 +599,7 @@ describe("actual desktop model-picker to submit routing", () => {
     await submit();
     expect(sends.map(({ harness, input }) => [harness, input.model])).toEqual([
       ["codex", "codex:gpt-6.1-sol"],
-      ["antigravity", "antigravity:gemini-3.8-flash-high"],
+      ["antigravity", "antigravity:gemini-3.8-flash"],
     ]);
     expect(sends[1].input.text).toContain("SKY-7421");
     expect(sends[1].input.text).toContain("/isolated/handoff-history.json");
@@ -609,13 +609,13 @@ describe("actual desktop model-picker to submit routing", () => {
   it("uses outgoing GPT for the edit recap and incoming Gemini for the user turn in the same chat", async () => {
     const original = getSessions()[0];
     await act(async () =>
-      actions.onModelChange(original.id, "antigravity", "antigravity:gemini-3.8-flash-high"),
+      actions.onModelChange(original.id, "antigravity", "antigravity:gemini-3.8-flash"),
     );
     expect(getSessions()[0].pendingSwitch?.fromModel).toBe(original.model);
     await submit();
     expect(sends.map(({ harness, input }) => [harness, input.model])).toEqual([
       ["codex", "codex:gpt-6.1-sol"],
-      ["antigravity", "antigravity:gemini-3.8-flash-high"],
+      ["antigravity", "antigravity:gemini-3.8-flash"],
     ]);
     expect(sends[1].input.text).toContain("SKY-7421");
     expect(sends[1].input.text).toContain("/isolated/handoff-history.json");
@@ -649,11 +649,11 @@ describe("actual desktop model-picker to submit routing", () => {
     expect(finished.harness).toBe("antigravity");
   });
   it("repairs the observed Codex/Gemini record and never asks Codex to recap with the foreign model", async () => {
-    const original = { ...getSessions()[0], model: "antigravity:gemini-3.8-flash-high" };
+    const original = { ...getSessions()[0], model: "antigravity:gemini-3.8-flash" };
     resetSessionsStore([original]);
     await submit();
     expect(sends.map(({ harness, input }) => [harness, input.model])).toEqual([
-      ["antigravity", "antigravity:gemini-3.8-flash-high"],
+      ["antigravity", "antigravity:gemini-3.8-flash"],
     ]);
     expect(sends[0].input.text).toContain("SKY-7421");
     expect(sends[0].input.text).toContain("/isolated/handoff-history.json");

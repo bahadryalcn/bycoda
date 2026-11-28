@@ -284,13 +284,15 @@ toggles the session sidebar independently.
 Collapsed project navigation uses a 56px icon rail with a centered divider.
 Expanded sections share label and count columns; Last
 sessions keeps separate collapse and open actions. The workspace header emphasizes
-the current location and holds only the conversation tools, aligned to the right,
-and a filled **New session** button at the far right, with a label when the workspace
+the current location, including **No project** for projectless conversations,
+and holds only the conversation tools, aligned to the right,
+and the **New session** control on the right, with a label when the workspace
 pane is wide and an icon when space is limited. Click the main button to start in
-the current project. Click its arrow or right-click the main button to open the
-project picker directly. Choosing another project opens its **Sessions** list
-with the new conversation selected. In narrow panes, **More
-actions** contains conversation search, selection and filters. Crews, Servers, Notes,
+the current project or in **No project**. Click its joined arrow and select
+**Choose project**, or right-click the main button to open the project picker
+directly. Choosing another project opens its **Sessions** list with the new
+conversation selected. The separate **More actions** menu contains conversation
+search, selection and filters in **No project** and in narrow panes. Crews, Servers, Notes,
 Automations, Social Media, Tasks and Room appear directly as stacked rail icons.
 Hover or focus an icon for its name and shortcut. The rail scrolls in short windows
 while Account and Settings remain at the bottom. A **Recovered work** icon appears
@@ -593,10 +595,18 @@ tabs or consume its recovery state. If storage cannot load, the startup retry
 screen remains available.
 
 Click **Last sessions** in the project rail to open a combined workspace list. It
-shows conversations active during the last seven days, newest first by default, with
-each project's saved icon, color and background. The sliders menu groups conversations
-by project or state and sorts by newest or oldest activity. Select an active grouping
-again to return to the flat list. Right-click a conversation to pin or rename it,
+shows, by default, the project groups' conversations active during the last seven days,
+newest first, with each project's saved icon, color and background. The time filter
+widens this to 30 days or all time. Each project header shows its full count; an open
+group loads its conversations page by page as you scroll to its end, so many projects and
+long histories stay fast. The list follows changes made in other windows within seconds. Pinned conversations
+come first whatever their age, then one folding group per project, then **No project**,
+then the **Settled** shelf at the end with every settled conversation. Settling a conversation moves it to the shelf instead of
+hiding it; a pinned conversation stays in **Pinned**. Pins and settle state are the same
+ones each project's own list shows, and the shelf opens or closes for both. The sliders
+menu groups conversations by project (the default) or state, or lists them flat, and
+sorts by newest or oldest activity; the choice and folded groups are remembered.
+Right-click a conversation to pin or rename it, including a conversation without a project,
 regenerate its title, copy identifiers, link a GitHub issue or PR, or schedule a
 reminder for a locally saved conversation. **Select** starts multi-selection across
 projects while keeping the current conversation open. A refresh keeps the previous
@@ -615,7 +625,7 @@ conversations or start another one. Older projectless conversations keep the fol
 configured under **Settings → General**. Choosing a project from the rail returns
 to its own conversation list. The
 combined list does not make unrelated repositories share Git operations. The time
-filter can narrow this window to Today. Clear restores Last 7 days. The list uses
+filter can also narrow this window to Today. Clear restores Last 7 days. The list uses
 current remote project results when available and shows a coverage note when a
 remote project cannot supply current results. Right-click a row or press
 **Shift+F10** to open its actions. **Archive** and **Delete** use the conversation's

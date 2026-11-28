@@ -102,11 +102,11 @@ export function LocalHostDownNotice({
       <Alert
         open
         tone="info"
-        title={t("The host on this computer is being updated.")}
+        title={t("Updating the host on this computer…")}
         dismissLabel={t("Dismiss")}
         onDismiss={notice.dismiss}
       >
-        {t("Tasks, sessions and sync on this computer return when it restarts.")}
+        {t("Everything returns in about a minute.")}
       </Alert>
     );
   return (

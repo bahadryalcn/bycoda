@@ -112,11 +112,14 @@ export function SessionGroupListRow({
   approvalIds,
   reminderColor,
   renderName,
+  total,
   onToggle,
   onArchiveAll,
   onDeleteAll,
 }: {
   entry: Extract<SessionListEntry, { kind: "pinned" | "reminders" | "settled" }>;
+  /** The group's full size when only part of it is loaded. */
+  total?: number;
   virtual: SessionListVirtualProps;
   expanded: boolean;
   busyIds: ReadonlySet<string>;
@@ -174,6 +177,7 @@ export function SessionGroupListRow({
           folder={folder}
           nameNode={renderName(name)}
           sessions={sessions}
+          total={total}
           expanded={expanded}
           busy={sessions.some((session) => busyIds.has(session.id))}
           done={sessions.some((session) => doneIds.has(session.id))}

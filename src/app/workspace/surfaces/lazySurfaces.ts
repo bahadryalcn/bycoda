@@ -17,10 +17,6 @@ export const CrewsView = lazySurface(
   },
   { suspense: false },
 );
-export const LiveStreamView = lazySurface(
-  async () => ({ default: (await import("./LiveStreamSurface")).LiveStreamSurface }),
-  { suspense: false },
-);
 export const SearchView = lazySurface(
   async () => {
     const module = await import("../../../features/search/ui/SearchView");
@@ -84,7 +80,6 @@ export function preloadToolSurface(tool: WorkspaceToolId): void {
     tasks: TasksView,
     automations: AutomationsView,
     crews: CrewsView,
-    "live-stream": LiveStreamView,
     inbox: InboxView,
     notes: NotesView,
     terminal: null,

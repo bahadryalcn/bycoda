@@ -403,6 +403,15 @@ export function resolveToolCallDisplay(
 }
 
 /**
+ * The user's answer to the agent's own question. It continues the running turn
+ * instead of starting one, so it is never a prompt: grouping, prompt anchors
+ * and edit/rewind targets all skip it.
+ */
+export function isQuestionAnswer(block: Block): boolean {
+  return block.role === "user" && !!block.questionAnswers?.length;
+}
+
+/**
  * User turns, with handoff dividers sitting on their own row. `managed` is for
  * a worker's own transcript, where the app-written turns are the orchestrator
  * talking to it — the whole prompt side of that conversation, and the only
@@ -422,7 +431,7 @@ export function groupTurns(blocks: Block[], managed = false): Block[][] {
       current = [];
       continue;
     }
-    if (block.role === "user" && current.length > 0) {
+    if (block.role === "user" && !isQuestionAnswer(block) && current.length > 0) {
       turns.push(current);
       current = [];
     }
@@ -446,7 +455,7 @@ export function lastTurn(blocks: Block[], managed = false): Block[] {
       return reversed.length === 0 ? [block] : reversed.reverse();
     }
     reversed.push(block);
-    if (block.role === "user") break;
+    if (block.role === "user" && !isQuestionAnswer(block)) break;
   }
   return reversed.reverse();
 }
@@ -517,8 +526,16 @@ export function groupTurnsStable(
  */
 export function groupTurnItems(blocks: Block[], options?: { settled?: boolean }): TurnItem[] {
   const settled = options?.settled ?? false;
+  // The answered question card stands where the tool call was, so the raw call row is dropped.
+  let lastAnswer = blocks.length - 1;
+  while (lastAnswer >= 0 && !isQuestionAnswer(blocks[lastAnswer])) lastAnswer -= 1;
   const visible = withoutSupersededInitialThinking(
-    blocks.filter((block) => !isIgnoredTurnBlock(block) && !isHiddenTool(block)),
+    blocks.filter(
+      (block, index) =>
+        !isIgnoredTurnBlock(block) &&
+        !isHiddenTool(block) &&
+        !(index < lastAnswer && block.role === "tool" && isQuestionTool(block)),
+    ),
   );
   const items: TurnItem[] = [];
   let activity: Block[] = [];
@@ -1155,7 +1172,12 @@ function isFoldableItem(item: TurnItem): boolean {
   // turn's status line stays at the top. The rows themselves never collapse —
   // the transcript pins them outside the fold's body.
   if (item.type === "subagents") return true;
-  return item.type === "activity" ? !item.blocks.some(needsApproval) : isProseBlock(item.block);
+  if (item.type === "activity") return !item.blocks.some(needsApproval);
+  return isProseBlock(item.block) || isQuestionAnswer(item.block);
+}
+
+function isQuestionTool(block: Block): boolean {
+  return block.tool?.kind?.toLowerCase() === "askuserquestion";
 }
 
 /**

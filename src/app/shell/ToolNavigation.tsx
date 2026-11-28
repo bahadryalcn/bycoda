@@ -12,7 +12,6 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import {
   Bot,
-  CircleDot,
   DashboardSquare,
   ExternalLink,
   Globe,
@@ -80,7 +79,6 @@ const icons = {
   tasks: DashboardSquare,
   automations: Zap,
   crews: Bot,
-  "live-stream": CircleDot,
   inbox: Inbox,
   notes: StickyNote,
   "conversation-tools": Wrench,
@@ -146,7 +144,6 @@ export function ToolNavigation() {
     tasks: t("Tasks"),
     automations: t("Automations"),
     crews: t("Crews"),
-    "live-stream": t("Live streaming"),
     inbox: t("Inbox"),
     notes: t("Notes"),
     "conversation-tools": t("Conversation tools"),
@@ -182,7 +179,7 @@ export function ToolNavigation() {
               ? navigation.notesEnabled
               : id === "servers"
                 ? navigation.includeServers || navigation.active === "servers"
-                : id === "crews" || id === "live-stream"
+                : id === "crews"
                   ? navigation.includeCrews || navigation.active === id
                   : id === "conversation-tools" || id === "assistant"
                     ? navigation.includeAuxiliaryTools
@@ -274,7 +271,7 @@ export function ToolNavigation() {
           })}
         </TabList>
       </Tabs>
-      {navigation.active === "crews" || navigation.active === "live-stream" ? null : (
+      {navigation.active === "crews" ? null : (
         <div className="tool-window-actions">
           {actionableSshReviews ? (
             <Button

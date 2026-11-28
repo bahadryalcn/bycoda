@@ -68,7 +68,11 @@ it("translates the remote project row's accessible name instead of joining a lit
     expect(labels.some((label) => / on Studio/.test(label ?? ""))).toBe(false);
     const row = container.querySelector<HTMLButtonElement>("[data-project-primary]")!;
     expect(row.querySelector("[data-truncate]")?.textContent).toBe("app");
-    expect(row.querySelector("svg.lucide-server")).not.toBeNull();
+    // The connection status is a named dot on the project icon, not a trailing server glyph.
+    expect(row.querySelector("svg.lucide-server")).toBeNull();
+    const dot = row.querySelector('[role="img"][aria-label="Bağlı"]');
+    expect(dot).not.toBeNull();
+    expect(dot?.closest(".relative")?.querySelector(".project-card-logo")).not.toBeNull();
     await act(async () => row.focus());
     const tooltip = document.querySelector('[role="tooltip"]');
     expect(tooltip?.querySelector("svg.lucide-server")).not.toBeNull();

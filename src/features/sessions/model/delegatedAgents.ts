@@ -12,7 +12,7 @@ import type { DockAgent, DockAgentStatus } from "./activityDock";
 import type { AgentInput, AgentStep, Block, Session } from "./session";
 import { delegatedBlockId } from "./delegatedBlockId";
 import { executionUserIndex } from "./executionTurn";
-import { bycodaConversationLabel } from "./bycodaToolCall";
+import { bycodaConversationLabel } from "../../../shared/model/bycodaConversationLabels";
 import { isSessionErrorBlock } from "./sessionIssue";
 import { sessionIssue } from "./sessionIssue";
 import { sessionNeedsInput } from "./session";

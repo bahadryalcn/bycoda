@@ -246,6 +246,8 @@ type Live = {
   contextCapacity?: { model: string; window: number };
   toolsByIndex: Map<number, InFlightTool>;
   toolsById: Map<string, InFlightTool>;
+  /** Server tools (advisor, web search) started and not yet answered, by call id. */
+  openServerTools: Set<string>;
   agentTasks: Map<string, LiveAgentTask>;
   /**
    * Every task Claude still runs for this session, by id: subagents, shells it
@@ -869,6 +871,7 @@ function newLiveState(input: {
     nextControlId: 1,
     toolsByIndex: new Map(),
     toolsById: new Map(),
+    openServerTools: new Set(),
     agentTasks: new Map(),
     backgroundTasks: new Map(),
     backgroundRows: new Map(),
@@ -1448,6 +1451,7 @@ function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
     };
     if (started.index >= 0) live.toolsByIndex.set(started.index, tool);
     live.toolsById.set(started.id, tool);
+    if (started.server) live.openServerTools.add(started.id);
     live.onEvent({
       type: "tool.started",
       callId: tool.id,
@@ -1596,6 +1600,7 @@ function settleServerTools(
   for (const result of results) {
     const tool = live.toolsById.get(result.toolUseId);
     if (!tool) continue;
+    live.openServerTools.delete(tool.id);
     const preview = previewFromTool(tool.name, tool.input, result.text);
     live.onEvent({
       type: "tool.updated",
@@ -1612,6 +1617,26 @@ function settleServerTools(
   }
 }
 
+/**
+ * A server tool answers inside the API message that called it. Once a user message or the turn's
+ * result follows, that message is over: a call still unanswered (Claude may leave an advisor call
+ * without a result when the message stops for client tools) will never settle, so it closes here.
+ */
+function closeUnansweredServerTools(live: Live): void {
+  for (const id of live.openServerTools) {
+    const tool = live.toolsById.get(id);
+    if (!tool) continue;
+    live.onEvent({
+      type: "tool.updated",
+      callId: tool.id,
+      title: tool.title,
+      kind: toolKindFromName(tool.name),
+      status: "interrupted",
+    });
+  }
+  live.openServerTools.clear();
+}
+
 function closePendingAssistantMessage(live: Live): void {
   if (!live.pendingAssistantBoundary) return;
   live.pendingAssistantBoundary = false;
@@ -1623,6 +1648,7 @@ function handleUser(live: Live, rec: Record<string, unknown>): void {
     noteSubagentResults(live, rec);
     return;
   }
+  closeUnansweredServerTools(live);
   const workflow = workflowReference(rec);
   if (
     workflow &&
@@ -1771,6 +1797,7 @@ function handleResult(live: Live, rec: Record<string, unknown>): void {
     live.usageLimit = null;
     return;
   }
+  closeUnansweredServerTools(live);
   // A /compact result reports the summarizer call's usage, not the rebuilt
   // conversation level. The next real turn will provide the fresh reading.
   if (!live.manualCompaction) {

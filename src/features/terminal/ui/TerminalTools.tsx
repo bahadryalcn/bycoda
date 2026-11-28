@@ -30,6 +30,7 @@ import { useT } from "../../../shared/i18n";
 import { LocalTerminalSuggestions } from "./LocalTerminalSuggestions";
 import styles from "./TerminalTools.module.css";
 import type { SshShellController } from "../model/sshShellIntegration";
+import { terminalPromptLine } from "../model/localTerminalCompletion";
 import { useHideWhileTyping } from "./useHideWhileTyping";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useToast } from "../../../shared/ui/ToastRegion";
@@ -70,7 +71,14 @@ export function TerminalTools({
   suggestionsAllowed?: boolean;
   remoteShell?: Pick<
     SshShellController,
-    "automatic" | "source" | "waiting" | "request" | "dismiss" | "setSource" | "setAutomatic"
+    | "automatic"
+    | "source"
+    | "waiting"
+    | "request"
+    | "dismiss"
+    | "setSource"
+    | "setAutomatic"
+    | "selectFromCatalog"
   >;
   onEnableShellIntegration?: (shell?: "bash" | "zsh" | "powershell") => void;
   onSavedCommands?: () => void;
@@ -491,7 +499,11 @@ export function TerminalTools({
         break;
       case "suggestions":
         changeMode("remote");
-        void remoteShell?.request(remoteShell.source);
+        if (
+          remoteShell &&
+          !(terminal && remoteShell.selectFromCatalog(terminalPromptLine(terminal)))
+        )
+          void remoteShell.request(remoteShell.source);
         break;
       case "command":
         if (mode === "command") close();

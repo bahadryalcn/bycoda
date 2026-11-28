@@ -1,12 +1,13 @@
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { t } from "../../../../shared/i18n";
 import { TabStrip } from "../../../../shared/ui/Tabs";
-import { Inbox, Link, MessageMultiple, Share, Zap } from "../../../../shared/ui/icons";
+import { CircleDot, Inbox, Link, MessageMultiple, Share, Zap } from "../../../../shared/ui/icons";
 import { SOCIAL_SCREEN_IDS, type SocialScreenId } from "./screens";
 
 const SCREEN_ICONS: Record<SocialScreenId, typeof Zap> = {
   command: Zap,
   content: Share,
+  live: CircleDot,
   audience: MessageMultiple,
   inbox: Inbox,
   accounts: Link,
@@ -18,6 +19,8 @@ function screenLabel(screen: SocialScreenId): string {
       return t("Command");
     case "content":
       return t("Content");
+    case "live":
+      return t("Live streaming");
     case "audience":
       return t("Audience");
     case "inbox":
@@ -28,7 +31,7 @@ function screenLabel(screen: SocialScreenId): string {
 }
 
 /**
- * The five-section switcher: one horizontal strip of icon and short label. A hairline under the strip
+ * The section switcher: one horizontal strip of icon and short label. A hairline under the strip
  * marks it as navigation; it scrolls sideways instead of spreading the tabs across the width.
  */
 export function SocialNav({

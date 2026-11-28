@@ -300,6 +300,8 @@ it("keeps automatic exposure and source choices explicit without requesting on m
     promptReady: true,
     previewEpoch: 0,
     catalogMatches: vi.fn(() => []),
+    catalogSelection: vi.fn(() => undefined),
+    selectFromCatalog: vi.fn(() => false),
     acceptCatalog: vi.fn(async () => {}),
   };
   const terminal = {
@@ -399,6 +401,8 @@ it("updates only the floating list from the prompt catalog while the owner types
     promptReady: true,
     previewEpoch: 0,
     catalogMatches: (prefix: string) => catalogSuggestions(catalog, "commands", prefix),
+    catalogSelection: () => undefined,
+    selectFromCatalog: () => false,
     acceptCatalog: vi.fn(async () => {}),
   } as SshShellController;
   const render = (remoteShell: SshShellController) =>

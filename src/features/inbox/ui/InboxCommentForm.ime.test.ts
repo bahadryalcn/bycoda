@@ -9,8 +9,20 @@ import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 vi.mock("../../notes/public/NoteMarkdownEditor", () => ({
   runMarkdownCommand: vi.fn(),
-  NoteMarkdownEditor: ({ value, label }: { value: string; label: string }) =>
-    createElement("textarea", { value, "aria-label": label, readOnly: true }),
+  NoteMarkdownEditor: ({
+    value,
+    label,
+    onChange,
+  }: {
+    value: string;
+    label: string;
+    onChange: (value: string) => void;
+  }) =>
+    createElement("textarea", {
+      value,
+      "aria-label": label,
+      onChange: (event: { target: { value: string } }) => onChange(event.target.value),
+    }),
 }));
 it.each([
   { isComposing: true, keyCode: 13 },

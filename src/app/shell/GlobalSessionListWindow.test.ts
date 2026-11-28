@@ -4,7 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
-import { GlobalSessionListWindow, groupGlobalSessions } from "./GlobalSessionListWindow";
+import {
+  buildGlobalSessionSections,
+  type GlobalSessionCatalogTotals,
+} from "../../features/sessions/model/globalSessionSections";
+import type { GlobalSessionListView } from "../../features/sessions/model/sessionFilters";
+import { GlobalSessionListWindow, type GlobalSessionPaging } from "./GlobalSessionListWindow";
 
 const makeSessions = (): SessionSummary[] =>
   Array.from({ length: 1000 }, (_, index) => ({
@@ -18,7 +23,17 @@ const makeSessions = (): SessionSummary[] =>
     updatedAt: 1000 - index,
   }));
 
-function Window({ sessions }: { sessions: SessionSummary[] }) {
+function Window({
+  sessions,
+  view = { groupBy: "none", sort: "newest" },
+  catalog,
+  paging,
+}: {
+  sessions: SessionSummary[];
+  view?: GlobalSessionListView;
+  catalog?: GlobalSessionCatalogTotals;
+  paging?: GlobalSessionPaging;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   return createElement(
     "div",
@@ -28,9 +43,16 @@ function Window({ sessions }: { sessions: SessionSummary[] }) {
       className: "overflow-y-auto",
     },
     createElement(GlobalSessionListWindow, {
-      groups: groupGlobalSessions(sessions, { groupBy: "none", sort: "newest" }, () => "idle"),
+      sections: buildGlobalSessionSections(sessions, view, () => "idle", undefined, catalog),
       scrollRef: scrollRef as RefObject<HTMLDivElement | null>,
-      view: { groupBy: "none", sort: "newest" },
+      view,
+      paging,
+      isCollapsed: () => false,
+      expandCollapsed: false,
+      onToggleCollapsed: () => {},
+      busyIds: new Set<string>(),
+      doneIds: new Set<string>(),
+      approvalIds: new Set<string>(),
       isActive: (session) => session.cwd === "/workspace/two" && session.id === "session-250",
       renderSession: (session, active) =>
         createElement(
@@ -100,6 +122,41 @@ it("keeps global history bounded and scrollable while retaining exact active row
   expect(activeRows()).toHaveLength(1);
   expect(container.querySelectorAll("[data-index]").length).toBeLessThan(100);
   expect(viewport.scrollTop).toBe(25_000);
+});
+
+it("loads a project's next page when its loader row mounts and stops once done", async () => {
+  const status = new Map<string, "idle" | "loading" | "done" | "error">([
+    ["project:/workspace/one", "idle"],
+  ]);
+  const loadMore = vi.fn((key: string) => status.set(key, "loading"));
+  const props = {
+    sessions: sessions.slice(0, 3),
+    view: { groupBy: "project", sort: "newest" } as const,
+    catalog: {
+      projects: [
+        { key: "/workspace/one", cwd: "/workspace/one", count: 90, latestActivityAt: 1000 },
+        // Counted but not loaded yet: its header shows before any row.
+        { key: "/workspace/three", cwd: "/workspace/three", count: 4, latestActivityAt: 500 },
+      ],
+      settledCount: 0,
+    },
+    paging: {
+      segment: (key: string) => ({ status: status.get(key) ?? "idle" }),
+      loadMore,
+    } as GlobalSessionPaging,
+  };
+  await act(async () => root.render(createElement(Window, props)));
+  expect(loadMore).toHaveBeenCalledWith("project:/workspace/one");
+  expect(loadMore).toHaveBeenCalledWith("project:/workspace/three");
+  expect(
+    container.querySelector('[data-global-project-group="project:/workspace/one"]')?.textContent,
+  ).toContain("90");
+  status.set("project:/workspace/one", "done");
+  // A counted project whose pages ended empty disappears.
+  status.set("project:/workspace/three", "done");
+  await act(async () => root.render(createElement(Window, { ...props })));
+  expect(container.querySelector("[data-session-list-loader]")).toBeNull();
+  expect(container.querySelector('[data-global-project-group="project:/workspace/three"]')).toBeNull();
 });
 
 it("keeps browser scroll anchoring off the windowed session scroller", () => {

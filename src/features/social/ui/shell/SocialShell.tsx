@@ -47,7 +47,7 @@ export type SocialShellProps = {
   onSessionMount?: (portal: PanelSessionPortal | null) => void;
 };
 
-/** Redesigned Social workspace: one workspace selector, global AI stop, five sections. */
+/** Redesigned Social workspace: one workspace selector, global AI stop, its sections. */
 export function SocialShell({
   cwd,
   onClose,

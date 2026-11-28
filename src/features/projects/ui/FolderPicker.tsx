@@ -5,7 +5,7 @@ import {
   type PickerWindowEntry,
 } from "../../../shared/ui/picker/usePickerWindow";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-/** Different job: Folder navigation opens directories; its separate membership checkbox selects folders without navigating. */
+/** Different job: a click opens a folder; only its leading membership mark selects it, and chosen folders stay listed below. */
 import { Text } from "../../../shared/ui/Text";
 import { RemoteActionError } from "../../connections/public/RemoteActionError";
 import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
@@ -31,7 +31,10 @@ import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { probeWindowsDriveRoots } from "../model/windowsDriveRoots";
 import { parentPath, pathKey, prettyCwd, slash } from "../../../shared/lib/paths";
 import { Modal } from "../../../shared/ui/Modal";
-import { ArrowLeft, Check, Folder, FolderOpen, FolderPlus } from "../../../shared/ui/icons";
+import { ArrowLeft, Folder, FolderOpen, FolderPlus } from "../../../shared/ui/icons";
+import { Badge } from "../../../shared/ui/Badge";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { CheckboxMark } from "../../../shared/ui/Checkbox";
 
 type Props = {
   title: string;
@@ -214,8 +217,9 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
     });
   }
 
-  // A folder is a plain option with no nested controls. In a multi-select list a click toggles the
-  // folder and a double click opens it; Enter opens it from the keyboard.
+  // A click on a folder always opens it, as in a file manager, so entering a folder never selects
+  // it. In a multi-select list the leading mark is the only pointer target that toggles membership
+  // (Space from the keyboard); the mark is aria-hidden because the option exposes aria-selected.
   function renderEntry(entry: FsEntry, index: number, measured: boolean) {
     const chosen = multiple && selected.some((path) => pathKey(path) === pathKey(entry.path));
     const measure = measured ? { ref: win.measureElement, "data-index": index } : {};
@@ -233,22 +237,23 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
         tabIndex={-1}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
-          if (busy || loading) return;
-          if (multiple) toggleSelected(entry.path);
-          else navigate(entry.path);
-        }}
-        onDoubleClick={() => {
-          if (multiple && !busy && !loading) navigate(entry.path);
+          if (!busy && !loading) navigate(entry.path);
         }}
         className="flex min-w-0 items-center gap-2 text-start"
       >
         {multiple ? (
+          // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- Pointer twin of the listbox's Space toggle; the option owns focus and aria-selected.
           <span
-            aria-hidden
-            data-checked={chosen || undefined}
-            className="flex icon-md shrink-0 items-center justify-center"
+            data-folder-toggle=""
+            className="-my-1 -ms-1 flex shrink-0 cursor-pointer items-center justify-center p-1"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (busy || loading) return;
+              setActive(index);
+              toggleSelected(entry.path);
+            }}
           >
-            {chosen ? <Check className="icon-sm" /> : null}
+            <CheckboxMark checked={chosen} size="sm" />
           </span>
         ) : null}
         <Folder tone="muted" className="icon-md shrink-0" />
@@ -470,6 +475,51 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               ) : null}
             </PickerListRoot>
           </div>
+          {/* Chosen folders stay visible (and removable) after navigating away from them. */}
+          {multiple && selected.length ? (
+            <div
+              {...surfaceAttributes(
+                { frame: "pane", edge: "top" },
+                "flex shrink-0 items-start gap-2 px-3 py-2",
+              )}
+            >
+              <Text size="secondary" tone="muted" className="shrink-0 py-0.5">
+                {t("Selected")}
+              </Text>
+              <ul
+                aria-label={t("Selected")}
+                className="flex max-h-16 min-w-0 flex-1 flex-wrap gap-1 overflow-y-auto"
+              >
+                {selected.map((path) => {
+                  const name = path.split("/").filter(Boolean).pop() ?? path;
+                  return (
+                    <li key={pathKey(path)} className="min-w-0 max-w-full">
+                      <Tooltip asChild label={prettyCwd(path)}>
+                        <Badge
+                          truncate
+                          className="max-w-60"
+                          removeLabel={t("Remove {p0}", { p0: name })}
+                          onRemove={() => toggleSelected(path)}
+                        >
+                          {name}
+                        </Badge>
+                      </Tooltip>
+                    </li>
+                  );
+                })}
+              </ul>
+              <Button
+                variant="ghost"
+                size="sm"
+                motion="none"
+                type="button"
+                className="shrink-0"
+                onClick={() => setSelected([])}
+              >
+                {t("Clear selection")}
+              </Button>
+            </div>
+          ) : null}
           {newName !== null ? (
             <form
               {...surfaceAttributes(

@@ -17,6 +17,7 @@ import {
   hasRunningSubagent,
   initialThinkingIndex,
   lastActivityIndex,
+  lastTurn,
   mcpToolDisplay,
   nestedScrollAbsorbsWheel,
   proseSummary,
@@ -377,6 +378,49 @@ describe("groupTurns", () => {
       ["u1", "a1", "a2"],
       ["u3", "a3"],
     ]);
+  });
+  it("keeps an answer to the agent's question inside the running turn", () => {
+    const blocks: Block[] = [
+      { id: "u1", role: "user", text: "Make a page" },
+      { id: "a1", role: "assistant", text: "Which theme?" },
+      {
+        id: "q",
+        role: "user",
+        text: "Which theme?\nLight",
+        questionAnswers: [{ prompt: "Which theme?", answers: ["Light"] }],
+      },
+      { id: "a2", role: "assistant", text: "Done [1]." },
+      { id: "u2", role: "user", text: "Thanks" },
+    ];
+    expect(groupTurns(blocks).map((turn) => turn.map((block) => block.id))).toEqual([
+      ["u1", "a1", "q", "a2"],
+      ["u2"],
+    ]);
+    expect(lastTurn(blocks.slice(0, 4)).map((block) => block.id)).toEqual(["u1", "a1", "q", "a2"]);
+  });
+  it("hides the raw question tool row behind its answered question card", () => {
+    const ask: Block = {
+      id: "ask",
+      role: "tool",
+      text: "AskUserQuestion",
+      tool: { kind: "AskUserQuestion", status: "completed" },
+    };
+    const answer: Block = {
+      id: "q",
+      role: "user",
+      text: "Which theme?\nLight",
+      questionAnswers: [{ prompt: "Which theme?", answers: ["Light"] }],
+    };
+    const items = groupTurnItems([shell("s1"), ask, answer, shell("s2"), note("a", "Done")], {
+      settled: true,
+    });
+    expect(items.map((item) => item.type)).toEqual(["activity", "block", "activity", "block"]);
+    expect(items.flatMap((item) => (item.type === "block" ? [item.block.id] : []))).toEqual([
+      "q",
+      "a",
+    ]);
+    const fold = foldableWork(items);
+    expect(fold).toEqual({ start: 0, end: 2 });
   });
   it("keeps a handoff divider on its own row between providers", () => {
     const turns = groupTurns([

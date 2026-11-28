@@ -5,6 +5,12 @@
 .jira-board-planning {
   overscroll-behavior: contain;
 }
+/* Middle-button pan (useJiraBoardPan): every descendant shows the grab, cards included. */
+:is(.jira-board-columns, .jira-board-planning)[data-panning],
+:is(.jira-board-columns, .jira-board-planning)[data-panning] * {
+  cursor: grabbing;
+  user-select: none;
+}
 .jira-board-column {
   min-inline-size: calc(var(--ui-space-12) * 5);
   scroll-padding-block-start: var(--ui-space-12);

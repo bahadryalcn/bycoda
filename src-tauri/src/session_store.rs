@@ -17,6 +17,7 @@ mod deletions;
 pub(crate) mod host_notes_fence;
 pub(crate) mod incremental;
 mod interruption_repair;
+pub(crate) mod list_feed;
 mod legacy_blob;
 pub(crate) mod native_delivery;
 #[cfg(all(test, windows))]
@@ -2708,6 +2709,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     incremental::ensure_schema(conn)?;
     ensure_list_summaries(conn)?;
     ensure_recent_session_revision(conn)?;
+    list_feed::ensure_schema(conn)?;
     rewind::ensure_schema(conn)?;
     crate::native_workspace::ensure_schema(conn)?;
     crate::native_editor_drafts::ensure_schema(conn)?;
@@ -3977,48 +3979,56 @@ fn recent_rows_after(
         args.push(rusqlite::types::Value::Text(value.id.clone()));
     }
     let rows = statement.query_map(rusqlite::params_from_iter(args), |row| {
-        let worktree_removed = row.get::<_, i64>(14)? != 0;
-        let branch: Option<String> = row.get(9)?;
-        let (interrupted, provider_history, _, managed_by) = list_projection(conn, row, 20)?;
-        let last_activity_at = row.get(24)?;
-        Ok(SessionSummary {
-            last_activity_at,
-            interrupted,
-            provider_history,
-            managed_by,
-            transcript_revision: None,
-            id: row.get(0)?,
-            orchestration_lead_id: None,
-            orchestration: None,
-            cwd: row.get(1)?,
-            harness: row.get(2)?,
-            model: row.get(3)?,
-            runtime_mode: row.get(4)?,
-            title: row.get(5)?,
-            provider_session_id: row.get(6)?,
-            created_at: row.get(7)?,
-            updated_at: row.get(8)?,
-            branch: if worktree_removed {
-                None
-            } else {
-                nonempty(branch)
-            },
-            worktree_cwd: row.get(13)?,
-            worktree_removed,
-            repo: None,
-            additions: 0,
-            deletions: 0,
-            archived: row.get::<_, i64>(10)? != 0,
-            pinned: row.get::<_, i64>(11)? != 0,
-            draft: row.get::<_, i64>(15)? != 0,
-            linked_work_item: optional_json(row.get(12)?),
-            automation_id: nonempty(row.get(16)?),
-            workspace_id: row.get(17)?,
-            workspace_revision: row.get(18)?,
-            workspace_mode: row.get(19)?,
-        })
+        recent_summary_row(conn, row)
     })?;
     rows.collect()
+}
+
+/// Maps one `RECENT_ROWS_SQL`-shaped row (25 columns) to a summary.
+fn recent_summary_row(
+    conn: &Connection,
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<SessionSummary> {
+    let worktree_removed = row.get::<_, i64>(14)? != 0;
+    let branch: Option<String> = row.get(9)?;
+    let (interrupted, provider_history, _, managed_by) = list_projection(conn, row, 20)?;
+    let last_activity_at = row.get(24)?;
+    Ok(SessionSummary {
+        last_activity_at,
+        interrupted,
+        provider_history,
+        managed_by,
+        transcript_revision: None,
+        id: row.get(0)?,
+        orchestration_lead_id: None,
+        orchestration: None,
+        cwd: row.get(1)?,
+        harness: row.get(2)?,
+        model: row.get(3)?,
+        runtime_mode: row.get(4)?,
+        title: row.get(5)?,
+        provider_session_id: row.get(6)?,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+        branch: if worktree_removed {
+            None
+        } else {
+            nonempty(branch)
+        },
+        worktree_cwd: row.get(13)?,
+        worktree_removed,
+        repo: None,
+        additions: 0,
+        deletions: 0,
+        archived: row.get::<_, i64>(10)? != 0,
+        pinned: row.get::<_, i64>(11)? != 0,
+        draft: row.get::<_, i64>(15)? != 0,
+        linked_work_item: optional_json(row.get(12)?),
+        automation_id: nonempty(row.get(16)?),
+        workspace_id: row.get(17)?,
+        workspace_revision: row.get(18)?,
+        workspace_mode: row.get(19)?,
+    })
 }
 
 fn list_projection(

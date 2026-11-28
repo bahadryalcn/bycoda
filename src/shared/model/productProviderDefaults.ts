@@ -27,7 +27,12 @@ const candidates: Partial<Record<HarnessId, { main: string[] }>> = {
     main: ["opencode:opencode/glm-5.3", "opencode/glm-5.3"],
   },
   antigravity: {
-    main: ["antigravity:gemini-3.8-flash-high", "gemini-3.8-flash-high"],
+    main: [
+      "antigravity:gemini-3.8-flash",
+      "gemini-3.8-flash",
+      "antigravity:gemini-3.8-flash-high",
+      "gemini-3.8-flash-high",
+    ],
   },
   pi: { main: ["pi:default"] },
   omp: { main: ["omp:default"] },

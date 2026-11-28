@@ -5,6 +5,7 @@ import { AudienceScreen } from "../audience/AudienceScreen";
 import { CommandScreen } from "../command/CommandScreen";
 import { ContentScreen } from "../content/ContentScreen";
 import { InboxScreen } from "../inbox/InboxScreen";
+import { LiveScreen } from "../live/LiveScreen";
 import {
   SOCIAL_SCREEN_IDS,
   type SocialScreenId,
@@ -15,6 +16,7 @@ import {
 const SCREENS: Record<SocialScreenId, ComponentType<SocialScreenProps>> = {
   command: CommandScreen,
   content: ContentScreen,
+  live: LiveScreen,
   audience: AudienceScreen,
   inbox: InboxScreen,
   accounts: AccountsScreen,

@@ -6,15 +6,13 @@ import { sessionIssue } from "./sessionIssue";
 import { summaryFromSession } from "../data/sessionHistory";
 import type { SessionSummary } from "../data/sessionStore";
 
-export const GLOBAL_RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-
 export function globalSessionKey(row: { cwd: string; id: string }): string {
   return JSON.stringify([pathKey(row.cwd), row.id]);
 }
 
 /**
- * Merge, filter and order every known row, independent of the clock: the seven-day cutoff is
- * applied separately by `withinGlobalRecentWindow`, so a tick never repeats this merge.
+ * Merge, filter and order every known row, independent of the clock: Last sessions applies its
+ * time filter when it lists them, so a minute tick never repeats this merge.
  * The caller supplies all known projects which pass its current privacy gates.
  */
 export function mergeGlobalRecentSessions(
@@ -22,6 +20,8 @@ export function mergeGlobalRecentSessions(
   history: readonly SessionSummary[],
   sessions: readonly Session[],
   allowedProjectKeys: ReadonlySet<string>,
+  /** true keeps archived rows only (the "Show archived" list); false keeps unarchived rows only. */
+  archived = false,
 ): SessionSummary[] {
   const rows = new Map<string, SessionSummary>();
   const workerKeys = new Set(
@@ -81,7 +81,10 @@ export function mergeGlobalRecentSessions(
   }
   return [...rows.values()]
     .filter(
-      (row) => !row.archived && !row.orchestrationLeadId && !workerKeys.has(globalSessionKey(row)),
+      (row) =>
+        !!row.archived === archived &&
+        !row.orchestrationLeadId &&
+        !workerKeys.has(globalSessionKey(row)),
     )
     .sort(
       (a, b) =>
@@ -90,24 +93,3 @@ export function mergeGlobalRecentSessions(
     );
 }
 
-/** Keep the rows active within the window ending at `now`; the order is preserved. */
-export function withinGlobalRecentWindow(
-  rows: readonly SessionSummary[],
-  now: number,
-): SessionSummary[] {
-  const cutoff = now - GLOBAL_RECENT_WINDOW_MS;
-  return rows.filter((row) => (row.lastActivityAt ?? row.updatedAt) >= cutoff);
-}
-
-export function buildGlobalRecentSessions(
-  stored: readonly SessionSummary[],
-  history: readonly SessionSummary[],
-  sessions: readonly Session[],
-  allowedProjectKeys: ReadonlySet<string>,
-  now: number,
-): SessionSummary[] {
-  return withinGlobalRecentWindow(
-    mergeGlobalRecentSessions(stored, history, sessions, allowedProjectKeys),
-    now,
-  );
-}

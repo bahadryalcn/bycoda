@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { RUNTIME_MODES } from "../../../../features/sessions/model/session";
 import type { HarnessEvent } from "../../core/types";
 import {
+  antigravityLaunchModel,
   antigravityStreamArgs,
   antigravityStreamUserLine,
   beginStreamTurn,
@@ -149,6 +150,59 @@ describe("parseAntigravityModels", () => {
   it("returns nothing for output that is not a model list", () => {
     expect(parseAntigravityModels("Please sign in to view available models.")).toEqual([]);
     expect(parseAntigravityModels("")).toEqual([]);
+  });
+
+  it("folds a family's reasoning levels into one model and launches the chosen level", () => {
+    const [flash, pro] = parseAntigravityModels(
+      [
+        "gemini-3.8-flash-high\tGemini 3.8 Flash (High)",
+        "gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)",
+        "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)",
+        "gemini-3.1-pro-low\tGemini 3.1 Pro (Low)",
+      ].join("\n"),
+    );
+    expect(flash).toEqual({
+      id: "antigravity:gemini-3.8-flash",
+      harness: "antigravity",
+      name: "Gemini 3.8 Flash",
+      nativeId: "gemini-3.8-flash",
+      settings: [
+        {
+          id: "effort",
+          label: "Reasoning",
+          kind: "select",
+          value: "high",
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High" },
+          ],
+        },
+      ],
+    });
+    expect(pro.nativeId).toBe("gemini-3.1-pro-low");
+    expect(antigravityLaunchModel(flash, "gemini-3.8-flash", { effort: "low" })).toBe(
+      "gemini-3.8-flash-low",
+    );
+    expect(antigravityLaunchModel(flash, "gemini-3.8-flash", { effort: "bogus" })).toBe(
+      "gemini-3.8-flash-high",
+    );
+    expect(antigravityLaunchModel(undefined, "gemini-3.8-flash-low", { effort: "high" })).toBe(
+      "gemini-3.8-flash-low",
+    );
+  });
+
+  it("leaves a family ungrouped when its bare id is listed too", () => {
+    const models = parseAntigravityModels(
+      ["gemini-x\tGemini X", "gemini-x-low\tGemini X (Low)", "gemini-x-high\tGemini X (High)"].join(
+        "\n",
+      ),
+    );
+    expect(models.map((model) => model.nativeId)).toEqual([
+      "gemini-x",
+      "gemini-x-low",
+      "gemini-x-high",
+    ]);
   });
 });
 

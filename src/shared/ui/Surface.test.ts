@@ -503,9 +503,9 @@ it.each([
 });
 
 it.each([
-  ["diff-add", "--color-diff-add"],
-  ["diff-delete", "--color-diff-del"],
-] as const)("uses %s measurement fill", (variant, token) => {
+  ["diff-add", "--color-diff-add-bg"],
+  ["diff-delete", "--color-diff-del-bg"],
+] as const)("tints %s rows so their code stays readable", (variant, token) => {
   expect(surfaceAttributes({ variant })["data-surface-variant"]).toBe(variant);
   expect(css).toContain(`background: var(${token});`);
 });

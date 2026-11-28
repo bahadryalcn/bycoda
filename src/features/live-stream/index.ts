@@ -1,1 +1,1 @@
-export { LiveStreamPage } from "./ui/LiveStreamPage";
+export { LiveStreamPanel } from "./ui/LiveStreamPanel";

@@ -15,7 +15,7 @@ import {
   type MutableRefObject,
 } from "react";
 import type { EditorView } from "@codemirror/view";
-import { detectTextDirection } from "streamdown";
+import { detectMarkdownDirection } from "../../../shared/lib/text/markdownDirection";
 import { useT } from "../../../shared/i18n";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { NotePreviewParser, notePreviewReferences, replacePreviewBlock } from "../previewBlocks";
@@ -193,7 +193,7 @@ export function NoteEditablePreview({
               ) : block.plainParagraph ? (
                 // ui-drift-ignore: feature-typography -- mirrors AgentMarkdown's root type for unparsed paragraphs
                 <div className="agent-markdown min-w-0 whitespace-normal font-sans text-ui-body leading-6">
-                  <p dir={detectTextDirection(block.text)}>{block.text}</p>
+                  <p dir={detectMarkdownDirection(block.text)}>{block.text}</p>
                 </div>
               ) : (
                 <AgentMarkdown

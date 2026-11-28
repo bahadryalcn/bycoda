@@ -425,15 +425,19 @@ it("pairs a phone in a dialog on the chosen computer and releases the code when 
   expect(container.querySelector('[role="dialog"]')).toBeNull();
 });
 
-it("requires the explicit Tailscale access switch before creating a Tailscale QR", async () => {
+it("opens Tailscale access and shows the QR in one explicit step, without a switch", async () => {
   api.access.mockResolvedValue({ state: "setup-required" });
   await render();
   await click("Connect a phone");
   const dialog = container.querySelector('[role="dialog"]')!;
   await click("Tailscale (private)", dialog);
   expect(api.enable).not.toHaveBeenCalled();
-  expect(dialog.textContent).toContain("never reachable from the public internet");
-  await click("Tailscale (private) access", dialog);
+  expect(dialog.textContent).toContain("never the public internet");
+  expect(dialog.querySelector('[role="switch"]')).toBeNull();
+  expect(buttons(dialog).some((button) => button.textContent?.trim() === "Check again")).toBe(
+    false,
+  );
+  await click("Turn on and show QR code", dialog);
   expect(api.enable).toHaveBeenCalledWith(local, "tailscale", undefined);
   expect(api.create).toHaveBeenCalledWith(local);
 });

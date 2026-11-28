@@ -17,7 +17,7 @@ pub(super) const LOCAL_HOST_REFUSED: &str =
 /// Refusal text for the Host on this computer while this app installs an update
 /// of it; same prefix as `LOCAL_HOST_REFUSED`.
 pub(super) const LOCAL_HOST_UPDATING: &str =
-    "Machine is unreachable. bycoda Host on this computer is being updated and will be back shortly.";
+    "Machine is unreachable. This app is updating bycoda Host on this computer; it answers again in about a minute.";
 
 /// The Host binds its port last, up to about 30 s after its process starts.
 /// A Host that still refuses after this window is treated as stopped, and

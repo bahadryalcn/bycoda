@@ -18,10 +18,6 @@ import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionLis
 import { WorkingIndicator } from "../../shared/ui/WorkingIndicator";
 import { Sash } from "../../shared/ui/Sash";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
-import {
-  requestOpenLiveStreamPage,
-  useLiveStreamPageOpen,
-} from "../../features/live-stream/public/liveStreamPage";
 import { useFormat, useLocale, useT } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
 import { observeResize } from "../../shared/lib/observeResize";
@@ -50,7 +46,6 @@ import {
   Pin,
   PinOff,
   CircleAlert,
-  CircleDot,
   Clock,
   FileDiff,
   StickyNote,
@@ -362,7 +357,6 @@ export function ProjectRail({
       : undefined;
   const t = useT();
   const navigator = presentation === "navigator";
-  const liveStreamOpen = useLiveStreamPageOpen();
   const workspaceFeatures = useWorkspaceFeatures();
   const inboxShortcut = useKeybindingShortcut("App: Open Inbox");
   const notesShortcut = useKeybindingShortcut("App: Open Notes");
@@ -953,8 +947,10 @@ export function ProjectRail({
               onClick={onOpenNoProject}
             >
               <Text
-                size="inherit"
-                tone={noProjectSelected ? "inherit" : "secondary"}
+                size="secondary"
+                tone="inherit"
+                weight={noProjectSelected ? "medium" : "regular"}
+                leading="tight"
                 truncate
                 className="@max-[140px]/rail:hidden"
               >
@@ -1162,15 +1158,8 @@ export function ProjectRail({
                         id: "servers",
                         label: t("Servers"),
                         icon: <Server className="icon-sm" />,
-                        active: serversActive && !liveStreamOpen,
+                        active: serversActive,
                         onSelect: onOpenServers,
-                      },
-                      {
-                        id: "live-stream",
-                        label: t("Live streaming"),
-                        icon: <CircleDot className="icon-sm" />,
-                        active: liveStreamOpen,
-                        onSelect: requestOpenLiveStreamPage,
                       },
                       ...(workspaceFeatures.inbox || inboxActive
                         ? [
@@ -1698,7 +1687,6 @@ function ProjectSectionHeader({
         <>
           {onAddGroup ? (
             <InlineAction
-              reveal="always"
               label={t("New project group")}
               motion="none"
               type="button"
@@ -2544,28 +2532,42 @@ function ProjectCard({
           "project-card-primary flex min-w-0 flex-1 cursor-default items-center gap-2 text-left @max-[140px]/rail:justify-center",
         )}
       >
-        <div
-          data-project-pinnable={!multi?.active && !!onTogglePin ? "" : undefined}
-          {...actionContentAttributes(
-            { phase: !multi?.active && !!onTogglePin ? "rest" : "always", hide: "opacity" },
-            "project-card-logo grid size-4 shrink-0 place-items-center @max-[140px]/rail:opacity-100!",
-          )}
-        >
-          {logoPath && !busy ? (
-            <ProjectLogoIcon
-              path={logoPath}
-              className="size-4 rounded-sm"
-              imageClassName="size-4"
-            />
-          ) : (
-            <ProjectMascot
-              project={seed}
-              color={color}
-              name={resolveTabGroupMascot(key, groupMascots)}
-              className="size-3.5"
-              active={busy}
-            />
-          )}
+        <div className="relative shrink-0">
+          <div
+            data-project-pinnable={!multi?.active && !!onTogglePin ? "" : undefined}
+            {...actionContentAttributes(
+              { phase: !multi?.active && !!onTogglePin ? "rest" : "always", hide: "opacity" },
+              "project-card-logo grid size-4 shrink-0 place-items-center @max-[140px]/rail:opacity-100!",
+            )}
+          >
+            {logoPath && !busy ? (
+              <ProjectLogoIcon
+                path={logoPath}
+                className="size-4 rounded-sm"
+                imageClassName="size-4"
+              />
+            ) : (
+              <ProjectMascot
+                project={seed}
+                color={color}
+                name={resolveTabGroupMascot(key, groupMascots)}
+                className="size-3.5"
+                active={busy}
+              />
+            )}
+          </div>
+          {/* The connection dot is anchored to the icon, so it keeps one place in every row and in the narrow rail. */}
+          {/* It fades with the logo so the hover Pin action covers a clean icon slot. */}
+          {remote ? (
+            <span
+              {...actionContentAttributes(
+                { phase: !multi?.active && !!onTogglePin ? "rest" : "always", hide: "opacity" },
+                "absolute -end-0.5 -bottom-0.5 flex @max-[140px]/rail:opacity-100!",
+              )}
+            >
+              <StatusDot label={connectionStatus} tone={connectionTone} />
+            </span>
+          ) : null}
         </div>
         {busy ? (
           <span
@@ -2582,7 +2584,7 @@ function ProjectCard({
           truncate
           size="secondary"
           tone="inherit"
-          weight="medium"
+          weight={selected ? "medium" : "regular"}
           leading="tight"
           className={labelClassName}
         >
@@ -2600,23 +2602,6 @@ function ProjectCard({
           </Text>
         ) : null}
         <span className="ms-auto flex min-w-0 shrink-0 items-center gap-1 @max-[140px]/rail:hidden">
-          {remote ? (
-            <Text
-              role="img"
-              aria-label={connectionStatus}
-              size="inherit"
-              tone="secondary"
-              className="relative grid size-4 shrink-0 place-items-center @max-[140px]/rail:hidden"
-            >
-              <Server className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
-              <StatusDot
-                label={connectionStatus}
-                aria-hidden="true"
-                tone={connectionTone}
-                className="absolute right-0 bottom-0"
-              />
-            </Text>
-          ) : null}
           {muteStatus ? (
             <Text
               role="img"
@@ -2835,8 +2820,6 @@ function ProjectGitChangeMark({ change }: { change: ProjectGitChange }) {
           additions={change.additions}
           deletions={change.deletions}
           size="micro"
-          weight="medium"
-          className="font-sans"
         />
       ) : null}
       <Text

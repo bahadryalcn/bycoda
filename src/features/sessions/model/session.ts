@@ -185,6 +185,8 @@ export type ToolPreviewLine = {
 export type ToolFileChange = {
   path: string;
   counts?: { additions: number; deletions: number };
+  /** What the provider reported for the file; absent when unknown. */
+  status?: "added" | "deleted" | "modified";
 };
 
 export type ToolPreview = {

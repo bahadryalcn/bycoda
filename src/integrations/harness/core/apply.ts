@@ -234,7 +234,10 @@ export function applyHarnessEvent(
           : {}),
         preview: event.preview,
         streaming:
-          event.status !== "completed" && event.status !== "failed" && event.status !== "stopped",
+          event.status !== "completed" &&
+          event.status !== "failed" &&
+          event.status !== "stopped" &&
+          event.status !== "interrupted",
         agentModel: event.agentModel,
         agentPrompt: event.agentPrompt,
         workflow: event.workflow,

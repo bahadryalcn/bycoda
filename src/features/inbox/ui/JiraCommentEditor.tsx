@@ -59,22 +59,27 @@ function commandLabel(command: (typeof commands)[number][0]): string {
   }
 }
 
+/** Markdown comment editor for every Inbox provider; image attachments only when `onImages` is given (Jira). */
 export function JiraCommentEditor({
   value,
   onChange,
-  images,
+  images = [],
   onImages,
   disabled,
   draftIdentity,
   onSubmit,
+  autoFocus,
+  placeholder,
 }: {
   value: string;
   onChange: (value: string) => void;
-  images: JiraCommentImage[];
-  onImages: (images: JiraCommentImage[]) => void;
+  images?: JiraCommentImage[];
+  onImages?: (images: JiraCommentImage[]) => void;
   disabled: boolean;
   draftIdentity: string;
   onSubmit: () => Promise<void>;
+  autoFocus?: boolean;
+  placeholder?: string;
 }) {
   useLocale();
   const viewRef: NoteEditorViewRef = useRef(null);
@@ -87,7 +92,7 @@ export function JiraCommentEditor({
     ? t("Reading the image…")
     : t("Wait for the comment to finish sending.");
   const addPaths = async (paths: string[]) => {
-    if (locked || readPending.current) return;
+    if (!onImages || locked || readPending.current) return;
     if (images.length + paths.length > 8) {
       setImageError(t("Attach up to 8 PNG, JPEG, GIF or WebP images, 10 MB each."));
       return;
@@ -159,7 +164,7 @@ export function JiraCommentEditor({
     };
   }, []);
   const addFiles = async (files: File[]) => {
-    if (locked || readPending.current) return;
+    if (!onImages || locked || readPending.current) return;
     setImageError("");
     if (
       images.length + files.length > 8 ||
@@ -220,10 +225,10 @@ export function JiraCommentEditor({
         }
       }}
       onDragOver={(event) => {
-        if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+        if (onImages && event.dataTransfer.types.includes("Files")) event.preventDefault();
       }}
       onDrop={(event) => {
-        if (!event.dataTransfer.files.length) return;
+        if (!onImages || !event.dataTransfer.files.length) return;
         event.preventDefault();
         event.stopPropagation();
         void addFiles(Array.from(event.dataTransfer.files)).catch((error) =>
@@ -258,17 +263,19 @@ export function JiraCommentEditor({
                 </Button>
               ))}
             </ButtonGroup>
-            <FileField
-              label={t("Images")}
-              hideLabel
-              buttonLabel={t("Insert image")}
-              accept={JIRA_IMAGE_TYPES.join(",")}
-              multiple
-              disabled={locked}
-              onFiles={(files) => {
-                void addFiles(files).catch((error) => setImageError(errorText(error)));
-              }}
-            />
+            {onImages ? (
+              <FileField
+                label={t("Images")}
+                hideLabel
+                buttonLabel={t("Insert image")}
+                accept={JIRA_IMAGE_TYPES.join(",")}
+                multiple
+                disabled={locked}
+                onFiles={(files) => {
+                  void addFiles(files).catch((error) => setImageError(errorText(error)));
+                }}
+              />
+            ) : null}
           </div>
         )}
       >
@@ -276,15 +283,21 @@ export function JiraCommentEditor({
           <NoteMarkdownEditor
             value={value}
             onChange={onChange}
-            // Notes' Mod+S must never publish a public Jira comment.
+            // Notes' Mod+S must never publish a public comment.
             onSave={() => {}}
-            onPasteImages={(files) => {
-              void addFiles(files).catch((error) => setImageError(errorText(error)));
-            }}
+            onPasteImages={
+              onImages
+                ? (files) => {
+                    void addFiles(files).catch((error) => setImageError(errorText(error)));
+                  }
+                : undefined
+            }
             viewRef={viewRef}
             minHeight={64}
             showLineNumbers={false}
             label={t("Comment")}
+            autoFocus={autoFocus}
+            placeholder={placeholder}
           />
         </div>
       </InboxCommentPreview>
@@ -301,7 +314,7 @@ export function JiraCommentEditor({
                 label={t("Remove {p0}", { p0: image.name })}
                 disabled={locked}
                 disabledReason={lockedReason}
-                onClick={() => onImages(images.filter((item) => item.id !== image.id))}
+                onClick={() => onImages?.(images.filter((item) => item.id !== image.id))}
               >
                 <X className="icon-xs" />
               </Button>

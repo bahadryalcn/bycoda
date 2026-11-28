@@ -2,8 +2,8 @@ import { useState, type ComponentProps } from "react";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { buildGlobalRecentSessions } from "../../../src/features/sessions/model/globalRecentSessions";
-import { pathKey } from "../../../src/shared/lib/paths";
+import { mergeGlobalRecentSessions } from "../../../src/features/sessions/model/globalRecentSessions";
+import { pathKey, projectKey } from "../../../src/shared/lib/paths";
 import { LastSessionsRows } from "../../../src/app/shell/LastSessionsSection";
 import { Sidebar } from "../../../src/app/shell/Sidebar";
 import { setWorktreeFocus } from "../../../src/features/source-control/model/worktreeFocus";
@@ -315,8 +315,33 @@ const statusLiveAgents = [
     done: false,
   },
 ];
+// ?paged: 40 projects with 3000 deterministic sessions over 60 days, served by an in-memory
+// catalog that hands out 30 rows of one project per loadMore, like the paged native history.
+const PAGED_PAGE = 30;
+const pagedProjects = params.has("paged")
+  ? Array.from({ length: 40 }, (_, index) => {
+      const projectCwd = `/fixture/p${String(index + 1).padStart(2, "0")}`;
+      return { cwd: projectCwd, key: projectKey(projectCwd), sessions: [] as SessionSummary[] };
+    })
+  : [];
+for (let index = 0; index < (pagedProjects.length ? 3000 : 0); index += 1) {
+  const project = pagedProjects[index % pagedProjects.length];
+  const updatedAt = now - Math.floor((index * 60 * 86_400_000) / 3000);
+  project.sessions.push({
+    id: `paged-${index}`,
+    cwd: project.cwd,
+    harness: "codex",
+    model: "gpt-6.1",
+    title: `Paged conversation ${index}`,
+    runtimeMode: "supervised",
+    createdAt: updatedAt - 600_000,
+    updatedAt,
+  });
+}
+const pagedLoading = new Set<string>();
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 function Fixture() {
+  const [pagedLoaded, setPagedLoaded] = useState<Record<string, number>>({});
   const [history, setHistory] = useState(
     params.has("statuses")
       ? statusRows
@@ -332,16 +357,60 @@ function Fixture() {
           : initial,
   );
   const [selected, setSelected] = useState("");
-  const [projectCwd, setProjectCwd] = useState(cwd);
+  const [projectCwd, setProjectCwd] = useState(params.has("projectless") ? "~" : cwd);
   const [gitCwd, setGitCwd] = useState(cwd);
   const [lastSessionsOpen, setLastSessionsOpen] = useState(params.has("global"));
-  const lastSessionsRows = buildGlobalRecentSessions(
-    history,
-    [],
-    [],
-    new Set([pathKey(cwd), pathKey(demoCwd)]),
-    now,
+  // The full history reaches the list; its default Last 7 days filter hides `row-old`.
+  const pagedRows = pagedProjects.flatMap((project) =>
+    project.sessions.slice(0, pagedLoaded[project.key] ?? 0),
   );
+  const lastSessionsRows = mergeGlobalRecentSessions(
+    pagedProjects.length ? pagedRows : history,
+    [],
+    [],
+    new Set(
+      pagedProjects.length
+        ? pagedProjects.map((project) => pathKey(project.cwd))
+        : [pathKey(cwd), pathKey(demoCwd)],
+    ),
+  );
+  const pagedCatalog = pagedProjects.length
+    ? {
+        projects: pagedProjects.map((project) => ({
+          key: project.key,
+          cwd: project.cwd,
+          count: project.sessions.length,
+          latestActivityAt: project.sessions[0].updatedAt,
+        })),
+        settledCount: 0,
+        segment: (key: string) => {
+          const project = pagedProjects.find((item) => `project:${item.key}` === key);
+          if (!project) return { status: "done" as const };
+          if (pagedLoading.has(project.key)) return { status: "loading" as const };
+          return {
+            status:
+              (pagedLoaded[project.key] ?? 0) >= project.sessions.length
+                ? ("done" as const)
+                : ("idle" as const),
+          };
+        },
+        loadMore: (key: string) => {
+          const project = pagedProjects.find((item) => `project:${item.key}` === key);
+          if (!project || pagedLoading.has(project.key)) return;
+          pagedLoading.add(project.key);
+          setTimeout(() => {
+            pagedLoading.delete(project.key);
+            setPagedLoaded((loaded) => ({
+              ...loaded,
+              [project.key]: Math.min(
+                project.sessions.length,
+                (loaded[project.key] ?? 0) + PAGED_PAGE,
+              ),
+            }));
+          }, params.has("paged-slow") ? 600 : 50);
+        },
+      }
+    : undefined;
   const selectListedSession = (id: string, path: string) => {
     const row = history.find((row) => row.id === id && row.cwd === path);
     if (!row) return;
@@ -418,6 +487,8 @@ function Fixture() {
             loading: params.has("loading"),
             error: params.has("error") ? "Fixture recent-history read failed" : null,
             refresh: () => {},
+            catalog: pagedCatalog,
+            setQuery: pagedCatalog ? () => {} : undefined,
           }}
           open
           projectRailOpen={params.has("wide")}
@@ -499,6 +570,12 @@ function Fixture() {
           <output aria-label="Selected session">{selected}</output>
           <output aria-label="Selected Git checkout">{gitCwd}</output>
           <output aria-label="Last Sessions mode">{String(lastSessionsOpen)}</output>
+          <output
+            aria-label="Loaded rows"
+            data-by-project={JSON.stringify(pagedLoaded)}
+          >
+            {pagedRows.length}
+          </output>
           <output aria-label="Created project">{createdProject}</output>
           <output aria-label="Created sessions">{createCount}</output>
           <output aria-label="Pin operations">{pinCount}</output>

@@ -214,6 +214,11 @@ export function useTurnScrollAnchor(
           continue;
         const width = widths.get(turn);
         if (width !== entry.contentRect.width || !heights.has(turn)) continue;
+        // Under page zoom an offscreen turn lays its placeholder out a fraction smaller than
+        // written. Writing that back shrank it every frame and the followed transcript crept
+        // with it, so a sub-pixel difference keeps the placeholder. Content changes reset it.
+        const placeholder = Number.parseFloat(turn.style.containIntrinsicBlockSize);
+        if (Math.abs(placeholder - entry.contentRect.height) < 1) continue;
         turn.style.containIntrinsicBlockSize = `${entry.contentRect.height}px`;
         turn.style.contentVisibility = "auto";
       }

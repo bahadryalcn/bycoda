@@ -15,6 +15,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Modal } from "../../../shared/ui/Modal";
 import { Text } from "../../../shared/ui/Text";
 import { useSshShellIntegration, type SshShellController } from "../model/sshShellIntegration";
+import { terminalPromptLine } from "../model/localTerminalCompletion";
 import { RemoteShellSuggestionsOverlay } from "./RemoteShellSuggestionsOverlay";
 import { TerminalTools } from "./TerminalTools";
 
@@ -88,6 +89,7 @@ export function TerminalControls({
     setSource,
     invalidate,
     suspendAutomatic,
+    selectFromCatalog,
   } = shell;
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep xterm's imperative input handlers bound to the current shell actions.
@@ -96,11 +98,22 @@ export function TerminalControls({
       invalidate,
       suspendAutomatic,
       requestCurrent: () => {
+        // The prompt catalog answers without touching the shell line; only
+        // sources it cannot answer (paths, no catalog yet) send a request chord.
+        if (terminal && selectFromCatalog(terminalPromptLine(terminal))) return;
         void request(source);
       },
     });
     return () => bindShellActions(null);
-  }, [bindShellActions, invalidate, suspendAutomatic, request, source]);
+  }, [
+    bindShellActions,
+    invalidate,
+    suspendAutomatic,
+    request,
+    source,
+    terminal,
+    selectFromCatalog,
+  ]);
 
   const [reportedId, setReportedId] = useState<string>();
   const initialCommand = snippets?.initialCommand;
@@ -128,6 +141,7 @@ export function TerminalControls({
         dismiss,
         setAutomatic,
         setSource,
+        selectFromCatalog,
       }
     : undefined;
   const closeSnippets = () => {

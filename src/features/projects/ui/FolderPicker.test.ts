@@ -160,7 +160,9 @@ describe("project folder browser", () => {
       path === "C:/Users/me" ? [...folders, ...many] : [],
     );
     await render(true);
-    await act(async () => option("Projects").click());
+    await act(async () =>
+      option("Projects").querySelector<HTMLElement>("[data-folder-toggle]")!.click(),
+    );
     type("Search folders", "note");
     expect(container.querySelectorAll('[role="option"]')).toHaveLength(1);
     expect(container.querySelector('[role="option"]')?.textContent).toContain("Notes");
@@ -225,6 +227,38 @@ describe("project folder browser", () => {
     await key("Enter");
     await click("Add (2)");
     expect(onPick).toHaveBeenCalledWith(["C:/Users/me/Projects", "C:/Users/me/Notes"]);
+  });
+
+  it("opens a clicked folder without selecting it in a multi-select list", async () => {
+    await render(true);
+    await act(async () => option("Projects").click());
+    expect(fs.listDir).toHaveBeenLastCalledWith("C:/Users/me/Projects");
+    expect(button("Add")).toBeTruthy();
+    expect(container.querySelector('[aria-label="Selected"]')).toBeNull();
+  });
+
+  it("lists chosen folders below the list and removes them there", async () => {
+    await render(true);
+    await act(async () =>
+      option("Projects").querySelector<HTMLElement>("[data-folder-toggle]")!.click(),
+    );
+    await act(async () =>
+      option("Notes").querySelector<HTMLElement>("[data-folder-toggle]")!.click(),
+    );
+    expect(option("Projects").getAttribute("aria-selected")).toBe("true");
+    const tray = container.querySelector('[aria-label="Selected"]')!;
+    expect([...tray.querySelectorAll("li")].map((item) => item.textContent)).toEqual([
+      "Projects",
+      "Notes",
+    ]);
+    await act(async () =>
+      tray.querySelector<HTMLButtonElement>('[aria-label="Remove Projects"]')!.click(),
+    );
+    expect(option("Projects").getAttribute("aria-selected")).toBe("false");
+    await click("Clear selection");
+    expect(container.querySelector('[aria-label="Selected"]')).toBeNull();
+    await click("Add");
+    expect(onPick).toHaveBeenCalledWith(["C:/Users/me"]);
   });
 
   const isBlocked = (el: HTMLElement) =>

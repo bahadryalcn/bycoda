@@ -129,7 +129,6 @@ export function CrewRailSection({
         labelClickLabel={t("Open Crews")}
         actions={
           <InlineAction
-            reveal="always"
             label={t("New crew")}
             motion="none"
             type="button"

@@ -112,8 +112,8 @@
   letter-spacing: 0.025em;
 }
 .bycoda-wordmark img {
-  width: 34px;
-  height: 34px;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
 }
 .bycoda-wordmark img.bycoda-brand-lettering {
@@ -125,11 +125,14 @@
   margin-bottom: 8px;
 }
 /* First React frame under the HTML splash: transparent, so the themed ground shows through, and the
-   72px mark centred alone exactly as `#boot-logo` is. The slow-start details hang below it and never push it. */
+   72px mark over the 120x24 wordmark centred exactly as `#boot-splash` lays them out. The slow-start
+   details hang below the lockup and never push it. */
 .bycoda-boot-loading {
   position: relative;
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 16px;
   min-block-size: 100vh;
   color: var(--color-content);
 }
@@ -138,10 +141,15 @@
   block-size: 72px;
   object-fit: contain;
 }
+.bycoda-boot-loading > img.bycoda-boot-loading-wordmark {
+  inline-size: 120px;
+  block-size: 24px;
+}
 .bycoda-boot-loading-details {
   position: absolute;
   inset-inline: 0;
-  inset-block-start: calc(50% + 36px + 12px);
+  /* Half the lockup (72 + 16 + 24 = 112px) plus the lockup gap. */
+  inset-block-start: calc(50% + 56px + 16px);
   display: grid;
   justify-items: center;
   gap: 12px;

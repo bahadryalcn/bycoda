@@ -136,7 +136,7 @@ it("explains an update without offering a start, and a dismissal does not hide a
   await render();
   await poll();
   await openNotifications();
-  expect(notice()?.textContent).toContain("being updated");
+  expect(notice()?.textContent).toContain("Updating the host");
   expect(
     [...notice()!.querySelectorAll("button")].some((button) =>
       button.textContent?.includes("Start host"),

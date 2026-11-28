@@ -1,6 +1,6 @@
 # Live streaming
 
-Open **Live streaming** from the bycoda desktop rail. It connects OBS to a Social
+Open **Social Media** and choose its **Live streaming** section. It connects OBS to a Social
 account for broadcasting and reads a public TikTok LIVE so you can follow its
 comments, gifts and totals. bycoda ships no built-in game: if you want viewers to
 interact with your stream, ask a bycoda chat to build that for your own scene.
@@ -23,7 +23,7 @@ interact with your stream, ask a bycoda chat to build that for your own scene.
    generated password and launch OBS.
 2. Build the scenes you want in OBS. The broadcast uses the scene OBS shows when
    you start.
-3. Connect your account and set up LIVE in **Social**. In **Live streaming**,
+3. Connect your account and set up LIVE in **Social Media**. In its **Live streaming** section,
    choose the account under **Stream to** and review the account and scene in the
    desktop approval dialog.
 4. Check the broadcast status. YouTube and Facebook can use their platform APIs

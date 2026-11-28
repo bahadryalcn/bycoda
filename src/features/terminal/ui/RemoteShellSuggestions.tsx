@@ -52,8 +52,9 @@ export function RemoteShellSuggestions({
   const host = useRef<HTMLDivElement>(null);
   const pending = useRef(false);
   const snapshot = shell.state?.status === "suggestions" ? shell.state : undefined;
-  // An explicit snapshot wins; otherwise the passive catalog list for the echoed prefix.
-  const catalogList = !snapshot && !selectionMode ? preview : undefined;
+  // An explicit snapshot wins; otherwise the catalog list for the echoed prefix
+  // (passive, or an explicit selection opened without a shell request).
+  const catalogList = !snapshot ? preview : undefined;
   const active = snapshot ?? catalogList;
   const suggestions = [...new Set(active?.suggestions ?? [])];
   const choice =
@@ -218,7 +219,7 @@ export function RemoteShellSuggestions({
         ) : acceptFailure ? (
           <InlineError details={acceptFailure}>{t("Could not insert the command.")}</InlineError>
         ) : null}
-        {snapshot || catalogList?.suggestions.length ? (
+        {snapshot || (selectionMode ? catalogList : catalogList?.suggestions.length) ? (
           <div className={styles.list}>
             <PickerList
               label={t("Remote command suggestions")}

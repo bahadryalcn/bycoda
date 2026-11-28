@@ -171,7 +171,7 @@ it("clamps the full physical width inside the viewport at 125 percent zoom", asy
   expect((Number.parseFloat(surface.style.left) + 200) * 1.25).toBe(990);
 });
 
-it("remeasures intrinsic width when an open picker receives different options", async () => {
+it("grows with wider options of an open picker and never narrows while open", async () => {
   vi.stubGlobal("innerWidth", 800);
   let contentWidth = 280;
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
@@ -200,7 +200,8 @@ it("remeasures intrinsic width when an open picker receives different options", 
   );
   await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
   await frame();
-  expect(placed.style.width).toBe("240px");
+  // Filtering to shorter rows keeps the width, so the surface does not jump under the pointer.
+  expect(placed.style.width).toBe("620px");
 });
 
 it("grows a list popup with its longest row up to 800px and never past the viewport", async () => {

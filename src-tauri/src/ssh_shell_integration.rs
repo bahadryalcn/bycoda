@@ -341,7 +341,8 @@ impl ShellIntegration {
         if !self.ready {
             return Err("Shell prompt is no longer ready".into());
         }
-        if prefix.trim().is_empty()
+        // "" is an explicit selection at an empty prompt; whitespace-only is not.
+        if (!prefix.is_empty() && prefix.trim().is_empty())
             || !literal(prefix)
             || !catalog_value(value)
             || value == prefix
@@ -379,10 +380,18 @@ impl ShellIntegration {
                 break;
             };
             visible.extend(self.buffer.drain(..start));
-            let end = self.buffer[MARKER.len()..]
+            // Payloads never contain ESC, CR or LF. Seeing one before the BEL
+            // means this sequence was cut off (an interrupted printf): drop only
+            // it so the prompt and later output stay visible.
+            let stop = self.buffer[MARKER.len()..]
                 .iter()
-                .position(|b| *b == 7)
+                .position(|b| matches!(*b, 7 | 0x1b | b'\r' | b'\n'))
                 .map(|end| end + MARKER.len());
+            if let Some(broken) = stop.filter(|&at| self.buffer[at] != 7) {
+                self.buffer.drain(..broken);
+                continue;
+            }
+            let end = stop;
             let Some(end) = end else {
                 if self.buffer.len() > MAX_PENDING_SEQUENCE {
                     self.buffer.clear();
@@ -591,26 +600,39 @@ impl ShellIntegration {
     /// prologue. It joins the fixed integration script before its one encoding.
     pub(crate) fn remote_command_with_prologue(&self, prologue: Option<&str>) -> String {
         if self.automatic {
-            let command = |mode| {
+            let script = |mode| {
                 let mut shell = Self::for_shell(mode).expect("fixed shell mode");
                 shell.nonce = self.nonce.clone();
-                format!(
-                    "printf '\\033]777;bycoda;{};shell;{}\\007'; {}",
-                    self.nonce,
-                    mode,
-                    shell.remote_command_with_prologue(prologue)
-                )
+                shell.script()
             };
+            let announce =
+                |mode| format!("printf '\\033]777;bycoda;{};shell;{mode}\\007'", self.nonce);
+            // Quoted here-documents carry each script literally, so it is quoted
+            // once (by the outer `sh -c`) instead of three levels deep: the
+            // Windows ssh command line is capped at 32,767 characters. The nonce
+            // never forms a whole script line, so it cannot end a document early.
+            let end = format!("BYCODA_EOF_{}", self.nonce);
+            let bash = format!(
+                "{}; exec bash --noprofile --rcfile /dev/fd/3 -i 3<<'{end}'\n{}\n{end}",
+                announce("bash"),
+                script("bash")
+            );
+            let zsh = format!(
+                "{}; (\n{}\n)",
+                announce("zsh"),
+                zsh_launcher(&format!(
+                    "cat >\"$bycoda_tmp/.zshrc\" <<'{end}'\n{}\n{end}",
+                    script("zsh")
+                ))
+            );
             // Detect the account's login shell. Unsupported shells retain their
             // ordinary login session with no input capture or suggestion chords.
-            let fallback = format!("{}exec \"${{SHELL:-/bin/sh}}\" -l", prologue.unwrap_or(""));
+            // The exported prologue runs once here and every branch inherits it.
             return format!(
                 "sh -c {}",
                 crate::remote_ssh::shell_quote(&format!(
-                    "case \"${{SHELL##*/}}\" in bash) {} ;; zsh) {} ;; *) {} ;; esac",
-                    command("bash"),
-                    command("zsh"),
-                    fallback
+                    "{}case \"${{SHELL##*/}}\" in\nbash) {bash}\n;;\nzsh) {zsh}\n;;\n*) exec \"${{SHELL:-/bin/sh}}\" -l ;;\nesac",
+                    prologue.unwrap_or(""),
                 ))
             );
         }
@@ -634,12 +656,10 @@ impl ShellIntegration {
             );
         }
         if self.mode == "zsh" {
-            // Only this uniquely-owned temporary rc is written. The outer shell
-            // survives the interactive child so its EXIT trap always removes it.
-            let outer = format!(
-                "set -eu\nbycoda_tmp=$(mktemp -d \"${{TMPDIR:-/tmp}}/bycoda-zsh.XXXXXXXX\")\ncase $bycoda_tmp in \"${{TMPDIR:-/tmp}}\"/bycoda-zsh.*) ;; *) exit 1;; esac\nchmod 700 \"$bycoda_tmp\"\ntrap 'rm -f -- \"$bycoda_tmp/.zshrc\"; rmdir -- \"$bycoda_tmp\"' EXIT\ntrap 'exit 130' INT\ntrap 'exit 129' HUP\ntrap 'exit 143' TERM\nprintf '%s' {} >\"$bycoda_tmp/.zshrc\"\nchmod 600 \"$bycoda_tmp/.zshrc\"\nBYCODA_ZDOTDIR_SET=${{ZDOTDIR+x}} BYCODA_ZDOTDIR_ORIGINAL=${{ZDOTDIR-}} ZDOTDIR=\"$bycoda_tmp\" zsh -d -i",
+            let outer = zsh_launcher(&format!(
+                "printf '%s' {} >\"$bycoda_tmp/.zshrc\"",
                 crate::remote_ssh::shell_quote(&script)
-            );
+            ));
             return format!("zsh -dfc {}", crate::remote_ssh::shell_quote(&outer));
         }
         let outer = format!(
@@ -648,6 +668,15 @@ impl ShellIntegration {
         );
         format!("bash -c {}", crate::remote_ssh::shell_quote(&outer))
     }
+}
+
+/// POSIX launcher for zsh with a temporary ZDOTDIR. Only this uniquely-owned rc
+/// is written (by `write_rc`). The launcher survives the interactive child so
+/// its EXIT trap always removes it.
+fn zsh_launcher(write_rc: &str) -> String {
+    format!(
+        "set -eu\nbycoda_tmp=$(mktemp -d \"${{TMPDIR:-/tmp}}/bycoda-zsh.XXXXXXXX\")\ncase $bycoda_tmp in \"${{TMPDIR:-/tmp}}\"/bycoda-zsh.*) ;; *) exit 1;; esac\nchmod 700 \"$bycoda_tmp\"\ntrap 'rm -f -- \"$bycoda_tmp/.zshrc\"; rmdir -- \"$bycoda_tmp\"' EXIT\ntrap 'exit 130' INT\ntrap 'exit 129' HUP\ntrap 'exit 143' TERM\n{write_rc}\nchmod 600 \"$bycoda_tmp/.zshrc\"\nBYCODA_ZDOTDIR_SET=${{ZDOTDIR+x}} BYCODA_ZDOTDIR_ORIGINAL=${{ZDOTDIR-}} ZDOTDIR=\"$bycoda_tmp\" zsh -d -i"
+    )
 }
 
 #[cfg(test)]
@@ -659,8 +688,18 @@ mod tests {
         let command = shell.remote_command();
         assert!(command.starts_with("sh -c "));
         assert!(command.contains("SHELL##*/"));
-        assert!(command.contains("zsh -dfc"));
+        assert!(command.contains("zsh -d -i"));
         assert!(command.contains("bash --noprofile"));
+        // Each script is carried by a quoted here-document; no script line can end it.
+        let end = format!("BYCODA_EOF_{}", shell.nonce);
+        assert_eq!(command.lines().filter(|line| *line == end).count(), 2);
+        // Windows CreateProcess caps the whole ssh command line at 32,767 chars;
+        // keep room for ssh options and a per-server environment prologue.
+        assert!(command.len() < 20_000, "{}", command.len());
+        let prologue = "export APP_ENV='production'\n";
+        let with_environment = shell.remote_command_with_prologue(Some(prologue));
+        assert_eq!(with_environment.matches("APP_ENV").count(), 1);
+        assert!(with_environment.len() < command.len() + 2 * prologue.len());
         shell.filter("t", &message(&shell, "shell;zsh"));
         let (_, events) = shell.filter("t", &message(&shell, "ready;alice;remote;1;0"));
         assert_eq!(events[0].shell, "zsh");
@@ -843,9 +882,14 @@ mod tests {
             shell.accept_catalog("gi", "gitk").unwrap(),
             "\x1b[200~tk\x1b[201~"
         );
+        // Explicit selection at an empty prompt inserts a whole issued value.
+        assert_eq!(
+            shell.accept_catalog("", "gitk").unwrap(),
+            "\x1b[200~gitk\x1b[201~"
+        );
         for (prefix, value) in [
             ("git st", "git stash"),
-            ("", "git"),
+            ("", "git stash"),
             (" ", "git"),
             ("git", "git"),
             ("gi", "ls -la"),
@@ -866,6 +910,24 @@ mod tests {
         shell.filter("t", &message(&shell, "ready;bob;remote;3;0"));
         assert!(shell.accept_catalog("gi", "gitk").is_err());
         assert!(shell.accept_catalog("git st", "git status").is_err());
+    }
+    #[test]
+    fn cut_off_sequence_never_swallows_the_following_prompt() {
+        let mut shell = ShellIntegration::new();
+        let mut cut = message(&shell, "catalog;alice;remote;1;history;git status");
+        cut.pop();
+        cut.extend_from_slice(b"^C\r\nroot@host:~# ");
+        let ready = message(&shell, "ready;alice;remote;1;0");
+        let mut visible = Vec::new();
+        let mut events = Vec::new();
+        for chunk in [&cut[..], &ready[..]] {
+            let (bytes, mut more) = shell.filter("t", chunk);
+            visible.extend(bytes);
+            events.append(&mut more);
+        }
+        assert_eq!(visible, b"\r\nroot@host:~# ");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].status, "ready");
     }
     #[test]
     fn large_command_catalog_arrives_split_across_reads_and_stays_private() {

@@ -196,12 +196,27 @@ it("filters the prompt catalog locally per keystroke and never writes to the she
     expect(controller.catalogMatches("git")).toEqual(["git stash list", "git status", "gitk"]);
     expect(controller.catalogMatches("git st")).toEqual(["git stash list", "git status"]);
     expect(controller.catalogMatches("ls; rm")).toEqual([]);
+    // Ctrl+Space selection, including at an empty prompt, comes from the same
+    // catalog: no request chord reaches the shell line editor.
+    expect(controller.catalogSelection("")?.suggestions.slice(0, 2)).toEqual([
+      "git stash list",
+      "git status",
+    ]);
+    expect(controller.catalogSelection(null)).toBeUndefined();
+    let opened = false;
+    await act(async () => {
+      opened = controller.selectFromCatalog("git st");
+    });
+    expect(opened).toBe(true);
+    expect(controller.waiting).toBe(false);
     expect(native.invoke).not.toHaveBeenCalled();
 
     await act(async () => controller.setSource("history"));
     expect(controller.catalogMatches("g")).toEqual(["git stash list", "git status"]);
     await act(async () => controller.setSource("paths"));
     expect(controller.catalogMatches("g")).toEqual([]);
+    // Paths need the shell's file system: selection falls back to a request.
+    expect(controller.catalogSelection("ls ")).toBeUndefined();
     await act(async () => controller.setSource("commands"));
 
     const epoch = controller.previewEpoch;

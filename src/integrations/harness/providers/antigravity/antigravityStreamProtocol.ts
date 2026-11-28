@@ -83,7 +83,8 @@
  *   conflicts with those ids ("--model gemini-3.8-flash-high conflicts with
  *   --effort=low"), is unsupported for claude-sonnet-4-6, and is accepted only
  *   with a bare family id such as gemini-3.8-flash, which `agy models` does not
- *   list. Bycoda therefore passes --model <listed id> and never --effort.
+ *   list. Bycoda therefore passes --model <listed id> and never --effort; the
+ *   picker shows one model per family and its Reasoning setting picks the id.
  *
  * COULD NOT DETERMINE
  *   Result statuses other than SUCCESS and ERROR; whether agy can emit
@@ -207,22 +208,80 @@ export function antigravityStreamUserLine(
 
 /** `agy models`: a "Fetching…" line, then `id<TAB>Display Name` rows. */
 export function parseAntigravityModels(stdout: string): AgentModel[] {
-  const models = new Map<string, AgentModel>();
+  const listed = new Map<string, string>();
   for (const raw of stdout.split(/\r?\n/)) {
     const [id, ...rest] = raw.split("\t");
     const nativeId = id?.trim();
     // Only a tab separates the columns; the progress line has none.
     if (!nativeId || rest.length === 0 || /\s/.test(nativeId)) continue;
-    if (models.has(nativeId)) continue;
-    const name = rest.join("\t").trim() || nativeId;
-    models.set(nativeId, {
-      id: `antigravity:${nativeId}`,
+    if (listed.has(nativeId)) continue;
+    listed.set(nativeId, rest.join("\t").trim() || nativeId);
+  }
+  return groupEffortLevels([...listed]);
+}
+
+const EFFORT_SUFFIX = /^(.+)-(minimal|low|medium|high|xhigh|max)$/;
+const EFFORT_ORDER = ["minimal", "low", "medium", "high", "xhigh", "max"];
+
+/**
+ * `agy models` lists one id per reasoning level (gemini-3.8-flash-low, -medium,
+ * -high). A family listed at two or more levels becomes one model whose
+ * Reasoning setting picks the level; `antigravityLaunchModel` rebuilds the
+ * listed id. A family whose bare id is also listed stays ungrouped.
+ */
+function groupEffortLevels(rows: ReadonlyArray<readonly [string, string]>): AgentModel[] {
+  const families = new Map<string, Array<{ effort: string; name: string }>>();
+  for (const [nativeId, name] of rows) {
+    const match = EFFORT_SUFFIX.exec(nativeId);
+    if (!match) continue;
+    families.set(match[1], [...(families.get(match[1]) ?? []), { effort: match[2], name }]);
+  }
+  const listed = new Set(rows.map(([nativeId]) => nativeId));
+  const models: AgentModel[] = [];
+  const grouped = new Set<string>();
+  for (const [nativeId, name] of rows) {
+    const family = EFFORT_SUFFIX.exec(nativeId)?.[1];
+    const levels = family ? families.get(family) : undefined;
+    if (!family || !levels || levels.length < 2 || listed.has(family)) {
+      models.push({ id: `antigravity:${nativeId}`, harness: "antigravity", name, nativeId });
+      continue;
+    }
+    if (grouped.has(family)) continue;
+    grouped.add(family);
+    const options = [...levels]
+      .sort((a, b) => EFFORT_ORDER.indexOf(a.effort) - EFFORT_ORDER.indexOf(b.effort))
+      .map((level) => ({
+        value: level.effort,
+        label: /\(([^()]+)\)\s*$/.exec(level.name)?.[1] ?? level.effort,
+      }));
+    const value =
+      ["high", "medium"].find((effort) => options.some((option) => option.value === effort)) ??
+      options[options.length - 1].value;
+    models.push({
+      id: `antigravity:${family}`,
       harness: "antigravity",
-      name,
-      nativeId,
+      name: levels[0].name.replace(/\s*\([^()]*\)\s*$/, "") || family,
+      nativeId: family,
+      settings: [{ id: "effort", label: "Reasoning", kind: "select", value, options }],
     });
   }
-  return [...models.values()];
+  return models;
+}
+
+/**
+ * The id `--model` takes: a grouped family plus its Reasoning level, since agy
+ * rejects a bare family without --effort. Any other id passes through.
+ */
+export function antigravityLaunchModel(
+  model: AgentModel | undefined,
+  nativeId: string,
+  settings?: Readonly<Record<string, string>>,
+): string {
+  const effort = model?.settings?.find((setting) => setting.id === "effort");
+  if (!effort || !nativeId || EFFORT_SUFFIX.test(nativeId)) return nativeId;
+  const chosen = settings?.effort;
+  const level = effort.options.some((option) => option.value === chosen) ? chosen : effort.value;
+  return `${nativeId}-${level}`;
 }
 
 // ---------------------------------------------------------------------------

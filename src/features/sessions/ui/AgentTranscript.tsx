@@ -181,6 +181,7 @@ import {
   foldedBlocks,
   initialThinkingIndex,
   lastActivityIndex,
+  isQuestionAnswer,
   isAdvisorBlock,
   isProseBlock,
   hasTurnCopyText,
@@ -2243,6 +2244,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
       return (
         <AdvisorRow
           block={block}
+          sessionBusy={planBusy}
           modelSettings={planModelSettings}
           cwd={cwd}
           onOpenFile={onOpenFile}
@@ -2918,13 +2920,16 @@ function lastUserBlockId(blocks: Block[], managed = false): string | undefined {
 function turnUserBlock(blocks: Block[], managed = false): Block | undefined {
   for (let i = blocks.length - 1; i >= 0; i--) {
     const block = blocks[i];
-    if (block.role === "user" && (managed || !block.internal)) return block;
+    if (block.role === "user" && !isQuestionAnswer(block) && (managed || !block.internal))
+      return block;
   }
   return undefined;
 }
 
 function userTurnCount(blocks: Block[], managed = false): number {
-  return blocks.filter((block) => block.role === "user" && (managed || !block.internal)).length;
+  return blocks.filter(
+    (block) => block.role === "user" && !isQuestionAnswer(block) && (managed || !block.internal),
+  ).length;
 }
 
 const PROMPT_RISE_MS = 560;

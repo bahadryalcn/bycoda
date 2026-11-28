@@ -50,6 +50,8 @@ async function setup(
     promptReady: true,
     previewEpoch: 0,
     catalogMatches: vi.fn(() => []),
+    catalogSelection: vi.fn(() => undefined),
+    selectFromCatalog: vi.fn(() => false),
     acceptCatalog: vi.fn(async () => {}),
   };
   const terminal = {
@@ -238,6 +240,22 @@ it("accepts the passive catalog list through native catalog verification", async
     expect(event.defaultPrevented).toBe(true);
     expect(context.shell.acceptCatalog).toHaveBeenCalledExactlyOnceWith("git s", "git status");
     expect(context.shell.accept).not.toHaveBeenCalled();
+    expect(context.terminal.input).not.toHaveBeenCalled();
+  } finally {
+    await context.cleanup();
+  }
+});
+
+it("selects explicitly from the catalog at an empty prompt without a shell request", async () => {
+  const preview = { prefix: "", suggestions: ["git status", "ls -la"] };
+  const context = await setup(false, false, "bash", true, preview, false);
+  try {
+    expect(context.host.textContent).not.toContain("Waiting for the shell prompt");
+    await context.key("ArrowDown");
+    await context.key("Enter");
+    expect(context.shell.acceptCatalog).toHaveBeenCalledExactlyOnceWith("", "ls -la");
+    expect(context.shell.accept).not.toHaveBeenCalled();
+    expect(context.shell.request).not.toHaveBeenCalled();
     expect(context.terminal.input).not.toHaveBeenCalled();
   } finally {
     await context.cleanup();

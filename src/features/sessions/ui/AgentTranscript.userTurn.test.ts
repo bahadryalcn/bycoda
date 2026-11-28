@@ -15,6 +15,34 @@ const file = {
   size: 1024,
 };
 
+describe("answered agent question", () => {
+  const blocks: Block[] = [
+    { id: "u", role: "user", text: "Make a page", durationMs: 4_000 },
+    {
+      id: "ask",
+      role: "tool",
+      text: "AskUserQuestion",
+      tool: { kind: "AskUserQuestion", status: "completed" },
+    },
+    {
+      id: "q",
+      role: "user",
+      text: "Which theme?\nLight",
+      questionAnswers: [{ prompt: "Which theme?", answers: ["Light"] }],
+    },
+    { id: "a", role: "assistant", text: "Done." },
+  ];
+
+  it("stays one turn: one footer, no raw tool row, the question card in place", () => {
+    const markup = render(blocks);
+
+    expect(markup.match(/aria-label="Copy response"/g)).toHaveLength(1);
+    expect(markup).not.toContain("AskUserQuestion");
+    expect(markup).toContain("data-question-answer");
+    expect(markup).toContain("Which theme?");
+  });
+});
+
 describe("user turn layout", () => {
   it("puts attachments above the bubble and draws no empty bubble for a bare attachment", () => {
     const markup = render([{ id: "u", role: "user", text: "", attachments: [file] }]);

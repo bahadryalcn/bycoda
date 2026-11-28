@@ -33,5 +33,5 @@ export function useSettledShelf(
     setCollapsedState(next);
     saveSettledSessionsCollapsed(next);
   }, []);
-  return { shelve, isSettled, setCollapsed, lifecycle };
+  return { shelve, isSettled, collapsed, setCollapsed, lifecycle };
 }

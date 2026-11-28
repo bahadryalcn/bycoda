@@ -51,6 +51,45 @@ it("groups persisted Codex and legacy edits per turn, merging repeats by resolve
   expect(records([prompt("plain")])).toEqual([]);
 });
 
+it("classifies added, deleted and modified files and leaves unknown kinds unset", () => {
+  const seed = { ...newSession("codex", "/repo"), blocks: [prompt("first")] };
+  const patch = "@@ -1 +1 @@\n-a\n+b\n";
+  const session = applyHarnessEvent(seed, {
+    type: "tool.updated",
+    callId: "multi",
+    kind: "edit",
+    status: "completed",
+    fileChanges: [
+      { path: "src/new.ts", kind: "add", contents: "x\n" },
+      { path: "src/old.ts", kind: "delete", contents: "y\n" },
+      { path: "src/same.ts", kind: "update", contents: patch },
+      { path: "src/both.ts", kind: "add", contents: "x\n" },
+    ],
+  });
+  const again = applyHarnessEvent(session, {
+    type: "tool.updated",
+    callId: "later",
+    kind: "edit",
+    status: "completed",
+    fileChanges: [{ path: "src/both.ts", kind: "update", contents: patch }],
+  });
+  const legacy: Block = {
+    id: "legacy",
+    text: "Edit title.ts",
+    role: "tool",
+    tool: { status: "completed", kind: "edit" },
+  };
+  expect(
+    turnChangedFiles([...again.blocks, legacy], "/repo").map(({ path, status }) => [path, status]),
+  ).toEqual([
+    ["src/new.ts", "added"],
+    ["src/old.ts", "deleted"],
+    ["src/same.ts", "modified"],
+    ["src/both.ts", "added"],
+    ["title.ts", undefined],
+  ]);
+});
+
 it("waits for successful edit evidence and keeps uncertain legacy counts absent", () => {
   const seed = { ...newSession("claude", "/repo"), blocks: [prompt("first")] };
   const changed = { path: "new.ts", kind: "add" as const, contents: "hello\n" };
@@ -107,5 +146,27 @@ it("waits for successful edit evidence and keeps uncertain legacy counts absent"
   expect(turnChangedFiles([...updated.blocks, ...legacy], "/repo")).toMatchObject([
     { path: "new.ts", counts: undefined },
     { path: "title.ts", openPath: "/repo/title.ts" },
+  ]);
+});
+
+it("marks a file Claude's Write created as added and an overwritten one as modified", () => {
+  const write = (id: string, path: string, detail: string): Block => ({
+    id,
+    text: `Write ${path}`,
+    role: "tool",
+    tool: { status: "completed", detail, preview: { kind: "write", path, contentOnly: true } },
+  });
+  expect(
+    turnChangedFiles(
+      [
+        write("a", "new.ts", "File created successfully at: /repo/new.ts"),
+        write("b", "old.ts", "The file /repo/old.ts has been updated successfully."),
+        write("c", "new.ts", "The file /repo/new.ts has been updated successfully."),
+      ],
+      "/repo",
+    ),
+  ).toMatchObject([
+    { path: "new.ts", status: "added" },
+    { path: "old.ts", status: "modified" },
   ]);
 });

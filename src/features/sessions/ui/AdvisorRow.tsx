@@ -21,18 +21,21 @@ export function AdvisorRow({
   modelSettings,
   cwd,
   onOpenFile,
+  sessionBusy = true,
 }: {
   block: Block;
   modelSettings?: Record<string, string>;
   cwd?: string;
   onOpenFile?: ComponentProps<typeof AgentMarkdown>["onOpenFile"];
+  /** False once the session is idle: a call still marked pending then never got its answer. */
+  sessionBusy?: boolean;
 }) {
   const t = useT();
   const state = toolCallState(block);
   const model = useAdvisorModelName(modelSettings);
   const advice = block.tool?.detail?.trim();
   const status =
-    state === "pending" ? (
+    state === "pending" && !sessionBusy ? null : state === "pending" ? (
       <WorkingIndicator size="sm" text={{ size: "caption" }}>
         {t("Thinking…")}
       </WorkingIndicator>

@@ -72,6 +72,11 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   width: auto;
   min-width: 0;
 }
+/* A wrapped line hangs under its own text, not under the line number. */
+html.appearance-word-wrap .agent-markdown .markdown-code-numbered-line {
+  padding-inline-start: 32px;
+  text-indent: -32px;
+}
 
 @theme {
   --container-rail-icon: 140px;
@@ -1352,8 +1357,10 @@ html:not(.is-mac) ::-webkit-scrollbar-thumb {
   border-radius: 9999px;
 }
 
-/* "Always" shows the resting thumb everywhere; the hover and pressed steps below still win. */
-html:not(.is-mac)[data-scrollbar-visibility="always"] ::-webkit-scrollbar-thumb {
+/* "Always" shows the resting thumb everywhere, or on one ScrollArea with scrollbar="always";
+   the hover and pressed steps below still win. */
+html:not(.is-mac)[data-scrollbar-visibility="always"] ::-webkit-scrollbar-thumb,
+html:not(.is-mac) [data-scrollbar="always"]::-webkit-scrollbar-thumb {
   background: var(--ui-scrollbar-thumb);
 }
 
@@ -2811,6 +2818,11 @@ input,
   padding-inline-start: 1.5rem;
 }
 
+/* A task item shows its checkbox in place of a bullet; nested lists keep their own markers. */
+.agent-markdown li.task-list-item {
+  list-style: none;
+}
+
 .agent-markdown li > [data-streamdown="ordered-list"],
 .agent-markdown li > [data-streamdown="unordered-list"] {
   padding-left: 0;
@@ -3470,6 +3482,20 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   font-size: 18px;
 }
 
+/* Streamdown sizes h3 at text-xl, above the 18px h2; keep the scale descending below it. */
+.agent-markdown [data-streamdown="heading-3"] {
+  font-size: var(--ui-font-title);
+}
+.agent-markdown [data-streamdown="heading-4"] {
+  font-size: var(--ui-font-body);
+}
+.agent-markdown [data-streamdown="heading-5"] {
+  font-size: var(--ui-font-secondary);
+}
+.agent-markdown [data-streamdown="heading-6"] {
+  font-size: var(--ui-font-caption);
+}
+
 /* A policy document never out-ranks the page title: its title is the page-title size, its sections the body size. */
 .policy-document [data-streamdown="heading-1"] {
   font-size: var(--ui-font-title);
@@ -3535,8 +3561,19 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   display: none;
 }
 
+/* An unlabeled fence has no header text: Streamdown's header would be an empty strip. */
+.agent-markdown
+  .markdown-code-resizable[data-collapsed="false"]
+  .markdown-code-fallback-label:empty
+  ~ [data-streamdown="code-block"]
+  [data-streamdown="code-block-header"] {
+  display: none;
+}
+
 /* The shell's toggle stays accessible even when there is no language label. */
-.agent-markdown .markdown-code-resizable[data-collapsed] [data-streamdown="code-block-header"] {
+.agent-markdown
+  .markdown-code-resizable[data-collapsed="true"]
+  [data-streamdown="code-block-header"] {
   display: flex;
 }
 

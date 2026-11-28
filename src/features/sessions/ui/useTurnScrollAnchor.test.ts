@@ -157,6 +157,30 @@ describe("useTurnScrollAnchor width changes", () => {
     expect(turn.style.contentVisibility).toBe("auto");
   });
 
+  it("keeps a contained turn's placeholder when zoom rounding re-reports it a fraction smaller", () => {
+    const report = (height: number) =>
+      act(() =>
+        callback(
+          [
+            {
+              target: turn,
+              contentRect: new DOMRect(0, 0, 500, height),
+              borderBoxSize: [{ inlineSize: 500, blockSize: height }],
+            } as unknown as ResizeObserverEntry,
+          ],
+          {} as ResizeObserver,
+        ),
+      );
+    // At 120% the browser lays a 100px placeholder out as 99.995px; writing that back each
+    // frame shrank every offscreen turn without end and dragged the followed transcript.
+    report(99.995);
+    report(99.99);
+    expect(turn.style.containIntrinsicBlockSize).toBe("100px");
+
+    report(140);
+    expect(turn.style.containIntrinsicBlockSize).toBe("140px");
+  });
+
   it("re-measures a contained turn at once when the width changes outside a resize", () => {
     const before = turnObservations();
     report(400);

@@ -11,7 +11,7 @@ Use for Social product workflows and their Host operations. Distinguish platform
 
 Paths are repository-root relative. Follow current imports and callers; this map is not complete.
 
-- `src/features/social/ui/SocialView.tsx` mounts the shell; `ui/shell/` holds the frame and screen map; `ui/command|content|audience|inbox|accounts/` hold the five screens; `ui/browser/` holds NEEDS_HUMAN and live view; `ui/common/` shared pieces.
+- `src/features/social/ui/SocialView.tsx` mounts the shell; `ui/shell/` holds the frame and screen map; `ui/command|content|live|audience|inbox|accounts/` hold the screens; `ui/browser/` holds NEEDS_HUMAN and live view; `ui/common/` shared pieces.
 - `src/features/social/model/`: `socialTools.ts` (AI-callable actions), `autonomy.ts` (levels and defaults), `audience.ts`, `outreach.ts`, `socialActions.ts` (RPC names). Hooks, `ui/socialBulk.ts` and draft/program models hold workflow state.
 - `src/integrations/social/`: platform adapters, capabilities, reason codes, messaging, media and OAuth helpers. It must not import `features`.
 - `host/social/core/`: action registry (`social-actions.ts`) and service API. `social.ts` only composes; add operations through the registry.

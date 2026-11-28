@@ -160,11 +160,15 @@ behavior changes. After editing `.agents/skills/`, run
   | Many edits across files, or a new file           | `bykit edit` with a raw patch on stdin (`bykit edit --help`)         |
   | Rename across files (dry run, then `--apply`)    | `bykit replace OLD NEW PATHS [--regex]`                              |
   | Locale keys: which files hold, which are missing | `bykit json DIR --has KEY` / `bykit json a.json --missing-in b.json` |
+  | Unused locale keys                               | `bykit json src/shared/i18n/locales/en.json --unused-in src host`    |
   | JSON query or edit                               | `bykit json F [QUERY] [--set path=value]`                            |
   | SQLite (read-only)                               | `bykit sql DB ["SELECT ..."] [--schema]`                             |
   | Long test, build or log output                   | `bykit run -- CMD`                                                   |
   | Long diff                                        | `bykit diff`                                                         |
   | PNG inspect, compare, crop                       | `bykit shot A.png [--compare B.png --out D.png] [--crop x,y,w,h]`    |
+  | Fixture screenshots: themes, sizes, an element   | `bykit shot URL --out a.png --theme light,dark --size 1280x900`      |
+  | Fixture page: text, console errors, after clicks | `bykit page URL [--text CSS] [--console] [--click CSS]`              |
+  | Process holding a port; free it                  | `bykit port N [--kill]`                                              |
 
 - A task ending, a review or a draft commit does not trigger a test run. Use fast
   types for the changed project when useful and review the diff. Run a focused

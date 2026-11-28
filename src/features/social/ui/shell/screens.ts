@@ -1,7 +1,14 @@
 import type { SocialClient } from "../../model/socialClient";
 
-/** The five redesigned screens, in navigation order. */
-export const SOCIAL_SCREEN_IDS = ["command", "content", "audience", "inbox", "accounts"] as const;
+/** The Social sections, in navigation order. */
+export const SOCIAL_SCREEN_IDS = [
+  "command",
+  "content",
+  "live",
+  "audience",
+  "inbox",
+  "accounts",
+] as const;
 export type SocialScreenId = (typeof SOCIAL_SCREEN_IDS)[number];
 
 /** Host-level facts the shell reads once and shares with every screen. Screens never write them. */

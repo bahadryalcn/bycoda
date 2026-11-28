@@ -8,6 +8,7 @@ import { InboxLoadError } from "./InboxLoadError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SkeletonBar } from "../../../shared/ui/Skeleton";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { InboxAvatar } from "./InboxPresentation";
@@ -1157,11 +1158,13 @@ export function JiraBoardView({
         />
       ) : null}
       {noBoards ? null : mode === "kanban" ? (
-        <div
+        <ScrollArea
           {...pan}
+          axis="both"
+          scrollbar="always"
           onScrollCapture={continueNearEnd}
           onWheelCapture={continueOnWheel}
-          className="jira-board-columns flex min-h-0 flex-1 items-stretch gap-3 overflow-auto px-3 pb-3 pt-2"
+          className="jira-board-columns flex min-h-0 flex-1 items-stretch gap-3 px-3 pb-3 pt-2"
         >
           {loading && !configuration
             ? [0, 1, 2].map((column) => (
@@ -1255,7 +1258,7 @@ export function JiraBoardView({
               )}
             </section>
           ) : null}
-        </div>
+        </ScrollArea>
       ) : (
         <div
           {...pan}

@@ -63,13 +63,16 @@ it("pans nested vertical and outer horizontal owners from SVG content, releases 
     await send("pointerdown", { button: 0 });
     await send("pointerdown", { pointerType: "touch" });
     expect(capture).not.toHaveBeenCalled();
+    expect(board.dataset.panning).toBeUndefined();
     await send("pointerdown");
+    expect(board.dataset.panning).toBe("");
     await send("pointermove", { clientX: 70, clientY: 50 });
     expect(board.scrollLeft).toBe(80);
     expect(column.scrollTop).toBe(130);
     expect(capture).toHaveBeenCalledExactlyOnceWith(7);
     await send("pointerup");
     expect(release).toHaveBeenCalledExactlyOnceWith(7);
+    expect(board.dataset.panning).toBeUndefined();
     await send("pointermove", { clientX: 0, clientY: 0 });
     expect(board.scrollLeft).toBe(80);
     expect(column.scrollTop).toBe(130);

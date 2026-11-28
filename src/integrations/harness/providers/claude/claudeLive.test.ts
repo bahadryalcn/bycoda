@@ -674,6 +674,60 @@ describe("claude streamed tool inputs", () => {
     expect(tool?.tool?.status).toBe("completed");
     expect(tool?.streaming).toBeFalsy();
   });
+
+  it("closes an advisor call whose message ended without a result", async () => {
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "stream_event",
+      session_id: "sess_1",
+      event: {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "server_tool_use", id: "srvtoolu_lost", name: "advisor", input: {} },
+      },
+    });
+    emit({
+      type: "assistant",
+      session_id: "sess_1",
+      message: {
+        content: [
+          { type: "server_tool_use", id: "srvtoolu_lost", name: "advisor", input: {} },
+          { type: "tool_use", id: "toolu_ls", name: "Bash", input: { command: "ls" } },
+        ],
+        stop_reason: "tool_use",
+      },
+    });
+    // The client tool's result starts the next request: the advisor's answer can no longer come.
+    emit({
+      type: "user",
+      session_id: "sess_1",
+      message: { content: [{ type: "tool_result", tool_use_id: "toolu_ls", content: "a" }] },
+    });
+    const between = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const closed = between.blocks.find((block) => block.tool?.callId === "srvtoolu_lost");
+    expect(closed?.tool?.status).toBe("interrupted");
+    expect(closed?.streaming).toBeFalsy();
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+  });
+
+  it("closes an advisor call still open when the turn ends", async () => {
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "stream_event",
+      session_id: "sess_1",
+      event: {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "server_tool_use", id: "srvtoolu_end", name: "advisor", input: {} },
+      },
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+    const session = events.reduce(applyHarnessEvent, newSession("claude", "/repo"));
+    const tool = session.blocks.find((block) => block.tool?.callId === "srvtoolu_end");
+    expect(tool?.tool?.status).toBe("interrupted");
+  });
 });
 
 describe("claude task tools", () => {

@@ -107,6 +107,56 @@ for (const theme of ["dark", "light"]) {
   });
 }
 
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800])
+    test(`projectless New session and overflow stay separate ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?projectless&${theme}${width === 1280 ? "&wide-workspace" : ""}`,
+      );
+      const header = page.locator("[data-workspace-header]");
+      const title = header.getByRole("heading", { name: "No project", exact: true, level: 2 });
+      const split = header.getByRole("group", { name: "New session", exact: true });
+      const create = split.getByRole("button", { name: "New session", exact: true });
+      const choose = split.getByRole("button", { name: "Session actions", exact: true });
+      const more = header.getByRole("button", { name: "More actions", exact: true });
+      await expect(title).toBeVisible();
+      await expect(choose).toBeVisible();
+      await expect(more.locator("svg")).toHaveCount(1);
+      if (width === 1280)
+        await expect(create.getByText("New session", { exact: true })).toBeVisible();
+      const titleBox = (await title.boundingBox())!;
+      const createBox = (await create.boundingBox())!;
+      const chooseBox = (await choose.boundingBox())!;
+      const moreBox = (await more.boundingBox())!;
+      expect(titleBox.x + titleBox.width).toBeLessThan(createBox.x);
+      expect(chooseBox.x - createBox.x - createBox.width).toBeLessThanOrEqual(1);
+      expect(moreBox.x).toBeGreaterThan(chooseBox.x + chooseBox.width);
+
+      const evidence = path.resolve("temp/verification/new-session-theme");
+      await mkdir(evidence, { recursive: true });
+      await header.screenshot({
+        path: path.join(evidence, `${theme}-${width}-projectless-title.png`),
+      });
+
+      await more.click();
+      const menu = page.getByRole("menu", { name: "More actions", exact: true });
+      await expect(menu.getByRole("menuitem", { name: "Search sessions" })).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "Choose project" })).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await choose.click();
+      await page.getByRole("menuitem", { name: "Choose project", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "New session in" });
+      await expect(dialog).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(choose).toBeFocused();
+      await create.click();
+      await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
+    });
+
 for (const light of [false, true])
   for (const width of [1280, 800])
     test(`workspace toolbar overflow ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
@@ -116,7 +166,7 @@ for (const light of [false, true])
       );
       const pane = page.locator('[data-side-pane="workspace"]');
       const header = pane.locator("[data-workspace-header]");
-      await pane.evaluate((element) => element.style.setProperty("width", "400px", "important"));
+      await pane.evaluate((element) => element.style.setProperty("width", "520px", "important"));
       const expectedHeight = await header.evaluate(
         (element) => element.getBoundingClientRect().height,
       );
@@ -156,7 +206,7 @@ for (const light of [false, true])
       await page.keyboard.press("Escape");
       await header.getByRole("button", { name: "New session", exact: true }).click();
       await expect(page.getByLabel("Created sessions", { exact: true })).toHaveText("1");
-      await pane.evaluate((element) => element.style.setProperty("width", "400px", "important"));
+      await pane.evaluate((element) => element.style.setProperty("width", "520px", "important"));
       await expect(header.getByRole("button", { name: "More actions", exact: true })).toBeHidden();
       await expect(
         header.getByRole("button", { name: "Filter sessions", exact: true }),
@@ -862,8 +912,8 @@ for (const light of [false, true]) {
         expect(endGap).toBeLessThanOrEqual(8);
       };
       await expectTrailing();
-      await expect(create).toHaveAttribute("data-button-hierarchy", "ghost");
-      await expect(choose).toHaveAttribute("data-button-hierarchy", "ghost");
+      await expect(create).toHaveAttribute("data-button-hierarchy", "secondary");
+      await expect(choose).toHaveAttribute("data-button-hierarchy", "secondary");
       await expect(create).toHaveAttribute("data-button-tone", "accent");
       await expect(choose).toHaveAttribute("data-button-tone", "accent");
       await expect(create).not.toHaveCSS("border-start-start-radius", "0px");
@@ -1408,9 +1458,12 @@ for (const theme of ["light", "dark"]) {
         await page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }).click();
       }
       await expect(menu.getByRole("menuitemcheckbox").first()).toHaveText("Group by project");
-      await project.click();
+      // Project grouping is the default: each project folds under its own header.
       await expect(project).toBeChecked();
-      await expect(list.getByRole("heading")).toHaveText(["demo-repo", "bycoda"]);
+      await expect(list.locator("[data-global-project-group]")).toHaveText([
+        /demo-repo/,
+        /bycoda/,
+      ]);
       await screenshot("project-menu");
 
       await state.click();
@@ -1532,7 +1585,14 @@ for (const theme of ["light", "dark"]) {
       }
       await open.click({ button: "right" });
       await menu.getByRole("menuitem", { name: "Settle", exact: true }).click();
-      await expect(row).toHaveCount(0);
+      if (theme === "dark" && width === 1280) {
+        // Pinned above, so the settled row keeps its place in the Pinned block.
+        await expect(row).toHaveCount(1);
+      } else {
+        // Settled rows move to the collapsed Settled shelf instead of leaving the list.
+        await expect(row).toHaveCount(0);
+        await expect(page.locator("[data-settled-sessions]")).toBeVisible();
+      }
     });
   }
 }
@@ -1578,3 +1638,71 @@ for (const { theme, width } of PANE_MATRIX)
       "the remote session still names its destination at 320px",
     ).toBeVisible();
   });
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`Last sessions pages projects while scrolling ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?global&paged&${theme}${width === 1280 ? "&wide-workspace" : ""}`,
+      );
+      const panel = page.locator("[data-session-list-panel]");
+      const headers = panel.locator("[data-global-project-group]");
+      const loaded = page.getByRole("status", { name: "Loaded rows" });
+      const loadedCount = async () => Number(await loaded.textContent());
+      const screenshot = (step: string) =>
+        page.screenshot({
+          path: `temp/verification/last-sessions-paging/${theme}-${width}-${step}.png`,
+          animations: "disabled",
+        });
+
+      // Headers show each project's full size before any of its rows are loaded.
+      await expect(headers.first()).toContainText("75");
+      await expect.poll(loadedCount).toBeGreaterThan(0);
+      await page.waitForTimeout(500);
+      const initial = await loadedCount();
+      expect(initial, "only groups near the viewport load").toBeLessThan(500);
+      await screenshot("initial");
+
+      let previous = initial;
+      for (const step of ["scroll-1", "scroll-2", "scroll-3"]) {
+        await panel.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+        await expect.poll(loadedCount, `${step} loads more rows`).toBeGreaterThan(previous);
+        previous = await loadedCount();
+        await screenshot(step);
+      }
+      expect(previous, "most of the 3000 rows stay unloaded").toBeLessThan(3000);
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
+  test(`Last sessions stops paging a collapsed project ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    // The slow catalog leaves a window to collapse the first project before its pages arrive.
+    await page.goto(
+      `/tests/browser/sessions/session-row-layout.html?global&paged&paged-slow&wide-workspace&${theme}`,
+    );
+    const panel = page.locator("[data-session-list-panel]");
+    const loadedBy = async () =>
+      JSON.parse(
+        (await page.getByRole("status", { name: "Loaded rows" }).getAttribute("data-by-project"))!,
+      ) as Record<string, number>;
+    const first = panel.locator('[data-global-project-group="project:/fixture/p01"]');
+    const second = panel.locator('[data-global-project-group="project:/fixture/p02"]');
+    await expect(second).toBeVisible();
+    await first.click();
+    await expect(panel.locator('[data-session-list-loader="project:/fixture/p01"]')).toHaveCount(0);
+    // Open projects keep paging to their end while the collapsed one stays where it was.
+    await expect
+      .poll(async () => (await loadedBy())["/fixture/p02"], { timeout: 10_000 })
+      .toBe(75);
+    expect((await loadedBy())["/fixture/p01"] ?? 0).toBeLessThanOrEqual(30);
+    await page.screenshot({
+      path: `temp/verification/last-sessions-paging/${theme}-1280-collapsed.png`,
+      animations: "disabled",
+    });
+  });
+}

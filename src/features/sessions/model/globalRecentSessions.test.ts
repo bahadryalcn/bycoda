@@ -3,15 +3,10 @@ import { pathKey } from "../../../shared/lib/paths";
 import { newSession } from "./session";
 import type { SessionSummary } from "../data/sessionStore";
 import { summaryFromSession } from "../data/sessionHistory";
-import {
-  buildGlobalRecentSessions,
-  GLOBAL_RECENT_WINDOW_MS,
-  mergeGlobalRecentSessions,
-  withinGlobalRecentWindow,
-} from "./globalRecentSessions";
+import { mergeGlobalRecentSessions } from "./globalRecentSessions";
 
 const now = 2_000_000_000;
-const cutoff = now - GLOBAL_RECENT_WINDOW_MS;
+const cutoff = now - 7 * 24 * 60 * 60 * 1000;
 function row(id: string, cwd = "G:/project", updatedAt = now): SessionSummary {
   return {
     id,
@@ -31,14 +26,13 @@ const allowed = new Set([
 ]);
 
 describe("global recent sessions", () => {
-  it("includes the exact seven-day boundary, orders by activity, and does not cap at 100", () => {
+  it("keeps every age, orders by activity, and does not cap at 100", () => {
     const rows = Array.from({ length: 125 }, (_, i) => row(String(i), "G:/project", cutoff + i));
-    rows.push(row("boundary", "G:/project", cutoff), row("old", "G:/project", cutoff - 1));
-    const result = buildGlobalRecentSessions(rows, [], [], allowed, now);
+    rows.push(row("old", "G:/project", cutoff - 1));
+    const result = mergeGlobalRecentSessions(rows, [], [], allowed);
     expect(result).toHaveLength(126);
     expect(result[0].id).toBe("124");
-    expect(result.some((entry) => entry.id === "boundary")).toBe(true);
-    expect(result.some((entry) => entry.id === "old")).toBe(false);
+    expect(result[125].id).toBe("old");
   });
 
   it("keeps same IDs on separate remote machines and excludes hidden, archived and workers", () => {
@@ -49,9 +43,22 @@ describe("global recent sessions", () => {
       { ...row("archive"), archived: true },
       { ...row("worker"), orchestrationLeadId: "lead" },
     ];
-    expect(buildGlobalRecentSessions(rows, [], [], allowed, now).map((entry) => entry.cwd)).toEqual(
+    expect(mergeGlobalRecentSessions(rows, [], [], allowed).map((entry) => entry.cwd)).toEqual(
       ["remote://host-a/work", "remote://host-b/work"],
     );
+  });
+
+  it("keeps archived rows only when asked for archived, with the other filters intact", () => {
+    const rows = [
+      row("live"),
+      { ...row("archive"), archived: true },
+      { ...row("hidden", "G:/hidden"), archived: true },
+      { ...row("worker"), archived: true, orchestrationLeadId: "lead" },
+    ];
+    expect(mergeGlobalRecentSessions(rows, [], [], allowed, true).map((r) => r.id)).toEqual([
+      "archive",
+    ]);
+    expect(mergeGlobalRecentSessions(rows, [], [], allowed).map((r) => r.id)).toEqual(["live"]);
   });
 
   it("overlays live activity while retaining stored provenance and workspace metadata", () => {
@@ -68,7 +75,7 @@ describe("global recent sessions", () => {
       worktreeCwd: "G:/worktree",
       providerHistory: { providers: ["claude"] as const, activeHarness: "claude" as const },
     };
-    expect(buildGlobalRecentSessions([stored], [], [session], allowed, now)[0]).toMatchObject({
+    expect(mergeGlobalRecentSessions([stored], [], [session], allowed)[0]).toMatchObject({
       title: "New title",
       lastActivityAt: now,
       branch: "feature",
@@ -76,46 +83,26 @@ describe("global recent sessions", () => {
       providerHistory: stored.providerHistory,
     });
     expect(
-      buildGlobalRecentSessions(
+      mergeGlobalRecentSessions(
         [stored],
         [],
         [{ ...session, inboxAsk: {} } as typeof session],
         allowed,
-        now,
       ),
     ).toEqual([]);
   });
 
-  it("uses activity rather than maintenance writes for ordering and the seven-day window", () => {
+  it("uses activity rather than maintenance writes for ordering", () => {
     const rows = [
       { ...row("older", "G:/project", now), lastActivityAt: cutoff + 1 },
       { ...row("newer", "G:/project", now - 1), lastActivityAt: cutoff + 2 },
-      { ...row("expired", "G:/project", now), lastActivityAt: cutoff - 1 },
+      { ...row("oldest", "G:/project", now), lastActivityAt: cutoff - 1 },
     ];
-    expect(buildGlobalRecentSessions(rows, [], [], allowed, now).map((entry) => entry.id)).toEqual([
+    expect(mergeGlobalRecentSessions(rows, [], [], allowed).map((entry) => entry.id)).toEqual([
       "newer",
       "older",
+      "oldest",
     ]);
-  });
-
-  it("merges independent of the clock and applies the window to the ordered rows afterwards", () => {
-    const rows = [
-      row("fresh", "G:/project", now),
-      row("edge", "G:/project", cutoff + 5),
-      row("stale", "G:/project", cutoff - 5),
-      row("hidden", "G:/hidden", now),
-    ];
-    const merged = mergeGlobalRecentSessions(rows, [], [], allowed);
-    expect(merged.map((entry) => entry.id)).toEqual(["fresh", "edge", "stale"]);
-    expect(withinGlobalRecentWindow(merged, now).map((entry) => entry.id)).toEqual([
-      "fresh",
-      "edge",
-    ]);
-    // One merge serves every later tick: the cutoff moving past a row only drops it.
-    expect(withinGlobalRecentWindow(merged, now + 10).map((entry) => entry.id)).toEqual(["fresh"]);
-    expect(withinGlobalRecentWindow(merged, now + 10)).toEqual(
-      buildGlobalRecentSessions(rows, [], [], allowed, now + 10),
-    );
   });
 
   it("takes provider history of a fully loaded live session from its summary", () => {
@@ -125,7 +112,7 @@ describe("global recent sessions", () => {
       runningModelTarget: { harness: "claude" as const, model: "other", modelSettings: {} },
       blocks: [{ id: "u", role: "user" as const, text: "Hi", startedAt: now }],
     };
-    const [result] = buildGlobalRecentSessions([], [], [session], allowed, now);
+    const [result] = mergeGlobalRecentSessions([], [], [session], allowed);
     expect(result.providerHistory).toEqual(summaryFromSession(session).providerHistory);
     expect(result.providerHistory?.activeHarness).toBe("claude");
   });

@@ -136,6 +136,7 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
    * Marks a list popup (select, menu, picker): the width is the floor and the surface grows with its
    * longest row up to `POPUP_MAX_WIDTH` (800px), always clamped to the viewport. Unlike `width`, content
    * can grow wider than the trigger or the dialog it opened from. Rows stay one line until the cap.
+   * While open the width only grows, so filtering or scrolling never makes the surface jump narrower.
    */
   minWidth?: number;
   minHeight?: number;
@@ -405,6 +406,8 @@ function WebPopover({
   // Preserve the submenu offset while lifting menus above their owning dialog.
   const effectiveLayer = Math.max(layer, menuLayer + (layer === LAYER.submenu ? 1 : 0));
   const frame = useRef<HTMLDivElement | null>(null);
+  // Widest list width this open popup has used: filtering or late rows never narrow it again.
+  const listWidth = useRef(0);
   const overlayId = useOverlay(
     frame,
     false,
@@ -463,6 +466,9 @@ function WebPopover({
     } finally {
       el.style.width = pinnedWidth;
     }
+    if (fixedWidth == null && minWidth != null) {
+      listWidth.current = popupListWidth(Math.max(naturalWidth, listWidth.current), minWidth);
+    }
     const next = placePopover(
       logicalAnchor,
       { width: naturalWidth, height: el.offsetHeight },
@@ -472,8 +478,7 @@ function WebPopover({
         align,
         gap,
         padding,
-        width:
-          fixedWidth ?? (minWidth == null ? naturalWidth : popupListWidth(naturalWidth, minWidth)),
+        width: fixedWidth ?? (minWidth == null ? naturalWidth : listWidth.current),
         minHeight,
         maxHeight,
       },

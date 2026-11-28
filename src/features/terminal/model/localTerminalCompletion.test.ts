@@ -4,6 +4,7 @@ import {
   localTerminalCompletion,
   localTerminalPrefix,
   safeHistoryCommand,
+  terminalPromptLine,
 } from "./localTerminalCompletion";
 
 function terminal(
@@ -32,7 +33,15 @@ function terminal(
 }
 
 it("completes echoed local shell prefixes, including decorated prompts", () => {
-  for (const prompt of ["$ ", "PS C:\\repo> ", "user [12:34] ~/repo [main] exit:1 > ", "❯ "]) {
+  for (const prompt of [
+    "$ ",
+    "PS C:\\repo> ",
+    "user [12:34] ~/repo [main] exit:1 > ",
+    "❯ ",
+    "root@srv2114594:~# ",
+    "user@host:/var/www$ ",
+    "[user@host repo]$ ",
+  ]) {
     expect(localTerminalCompletion(terminal(`${prompt}git s`))).toEqual({
       prefix: "git s",
       suggestions: ["git status", "git stash list"],
@@ -70,6 +79,10 @@ it("ranks recent matching commands ahead of templates without adding duplicate o
     suggestions: ["git show HEAD", "git status", "git stash list"],
   });
   expect(localTerminalPrefix(terminal("$ custom-tool --check"))).toBe("custom-tool --check");
+  // Explicit selection distinguishes an empty prompt from no recognised prompt.
+  expect(terminalPromptLine(terminal("root@srv2114594:~# "))).toBe("");
+  expect(terminalPromptLine(terminal("output text"))).toBeNull();
+  expect(localTerminalPrefix(terminal("root@srv2114594:~# "))).toBeNull();
 });
 
 it("keeps potentially sensitive and multiline values out of suggestions and session history", () => {

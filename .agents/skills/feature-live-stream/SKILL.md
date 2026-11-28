@@ -5,14 +5,14 @@ description: Use when changing TikTok LIVE event intake, live session totals, OB
 
 # Live streaming
 
-Own the desktop Live streaming screen, the Host live session and OBS lifecycle,
+Own the Live streaming section of the Social workspace, the Host live session and OBS lifecycle,
 and the go-live flow that starts OBS against a Social account. bycoda ships no
 built-in game or overlay; users build their own with AI. The Host counts incoming
 events and owns the session and report.
 
 ## Source starts
 
-- Desktop: `src/features/live-stream/` owns the control screen and session model.
+- Desktop: `src/features/live-stream/` owns the control panel and session model; Social mounts the panel.
 - Host: `host/live-stream/` owns connectors, session state, OBS and AI tools.
 - Wire schemas: `src/shared/model/host-contracts/live-stream.ts`.
 - Native: `src-tauri/src/remote/` allows supported owner RPC methods and

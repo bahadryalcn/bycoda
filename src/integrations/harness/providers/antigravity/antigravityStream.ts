@@ -18,12 +18,13 @@ import {
   createProviderRetirementLedger,
   settleProviderRetirements,
 } from "../../core/providerRetirement";
-import { nativeModelId } from "../../../../features/sessions/model/models";
+import { findModel, nativeModelId } from "../../../../features/sessions/model/models";
 import { additionalDirsFor } from "../../core/additionalDirs";
 import { spawnChild, unwatchChild, watchChild } from "../../core/child";
 import { pushExitStderrTail, redactExitStderrLine } from "../../core/exitDiagnostics";
 import type { HarnessEvent, SendTurnInput } from "../../core/types";
 import {
+  antigravityLaunchModel,
   antigravityStreamArgs,
   antigravityStreamUserLine,
   beginStreamTurn,
@@ -151,7 +152,11 @@ async function runTurn(
 }
 
 function launchFor(input: SendTurnInput) {
-  const model = nativeModelId(input.model);
+  const model = antigravityLaunchModel(
+    findModel(input.model),
+    nativeModelId(input.model),
+    input.modelSettings,
+  );
   return {
     model: model || undefined,
     addDirs: additionalDirsFor(input.sessionId),

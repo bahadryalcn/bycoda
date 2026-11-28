@@ -19,6 +19,7 @@ beforeEach(async () => {
 afterEach(() => {
   act(() => root.unmount());
   delete (window as { __bootLogo?: string }).__bootLogo;
+  delete (window as { __bootWordmark?: string }).__bootWordmark;
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -52,6 +53,20 @@ it("uses the logo the splash picked for the saved scheme, and the white one by d
   expect(container.querySelector("img")!.getAttribute("src")).toBe(
     "/brand/bycoda/mark-tea-red-loading.svg",
   );
+});
+
+it("shows the wordmark under the logo, matching the splash's scheme pick", () => {
+  (window as { __bootWordmark?: string }).__bootWordmark = "/brand/bycoda/wordmark-full-dark.svg";
+  renderLoading();
+  const wordmark = container.querySelector(".bycoda-boot-loading-wordmark")!;
+  expect(wordmark.getAttribute("src")).toBe("/brand/bycoda/wordmark-full-dark.svg");
+  act(() => root.unmount());
+  root = createRoot(container);
+  delete (window as { __bootWordmark?: string }).__bootWordmark;
+  renderLoading();
+  expect(
+    container.querySelector(".bycoda-boot-loading-wordmark")!.getAttribute("src"),
+  ).toBe("/brand/bycoda/wordmark-white.svg");
 });
 
 it("offers Retry below an unmoved logo once the boot is slow, outside the live region", () => {

@@ -1,6 +1,7 @@
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
 import type { AgentModel, ModelSetting } from "../../../shared/model/agentModel";
 import { attachProbedCatalogConsumer } from "../../../integrations/harness/core/probedCatalogStore";
+import { readCachedCatalogs, writeCachedCatalog } from "./modelCatalogCache";
 import { productProviderDefaults } from "../../../shared/model/productProviderDefaults";
 import { withClaudeAdvisor } from "./claudeAdvisor";
 import { withAutoCompactSettings } from "./autoCompact";
@@ -197,10 +198,23 @@ export const MODELS: AgentModel[] = [
     nativeId: "",
   },
   {
-    id: "antigravity:gemini-3.8-flash-high",
+    id: "antigravity:gemini-3.8-flash",
     harness: "antigravity",
-    name: "Gemini 3.8 Flash (High)",
-    nativeId: "gemini-3.8-flash-high",
+    name: "Gemini 3.8 Flash",
+    nativeId: "gemini-3.8-flash",
+    settings: [
+      {
+        id: "effort",
+        label: "Reasoning",
+        kind: "select",
+        value: "high",
+        options: [
+          { value: "low", label: "Low" },
+          { value: "medium", label: "Medium" },
+          { value: "high", label: "High" },
+        ],
+      },
+    ],
   },
 ];
 
@@ -214,7 +228,7 @@ export const DEFAULT_MODEL_ID: Record<HarnessId, string> = {
   omp: "omp:default",
   fx: "fx:zai/glm-5.2-fast",
   hermes: "hermes:default",
-  antigravity: "antigravity:gemini-3.8-flash-high",
+  antigravity: "antigravity:gemini-3.8-flash",
   acp: "",
 };
 
@@ -282,6 +296,7 @@ export function getModelSnapshot(): number {
 export function setHarnessModels(harness: HarnessId, models: AgentModel[], live = true) {
   if (models.length === 0 && harness !== "acp") return;
   provisional[live ? "delete" : "add"](harness);
+  const listed = models;
   models = foldFastVariants(models);
   models = models.map((model) => withAutoCompactSettings(withClaudeAdvisor(model, models)));
   const defaultId = pickDefaultId(harness, models);
@@ -294,6 +309,7 @@ export function setHarnessModels(harness: HarnessId, models: AgentModel[], live 
   }
   overlays = { ...overlays, [harness]: models };
   overlayDefaults = { ...overlayDefaults, [harness]: defaultId };
+  if (live) writeCachedCatalog(harness, listed);
   emit();
 }
 
@@ -586,6 +602,8 @@ export function resolveModelFromCatalog(
     const slug = nativeIdFrom(harness === "claude" ? id.trim().replace(/\[1m\]$/i, "") : id);
     const byNative = available.find((model) => (model.nativeId ?? nativeIdFrom(model.id)) === slug);
     if (byNative) return byNative;
+    const byEffortFamily = effortFamilyOf(available, slug);
+    if (byEffortFamily) return byEffortFamily;
     // Keep moving Claude aliases as aliases until the CLI advertises them.
     if (harness === "claude" && /^(opus|sonnet|haiku)$/.test(slug)) {
       return {
@@ -652,6 +670,25 @@ export function resolveModelFromCatalog(
     };
   }
   return catalog.fallback;
+}
+
+/**
+ * A saved per-level id (`gemini-3.8-flash-low`) from before a catalog grouped its
+ * levels into one model with a Reasoning setting offering that level.
+ */
+function effortFamilyOf(available: AgentModel[], slug: string): AgentModel | undefined {
+  const cut = slug.lastIndexOf("-");
+  if (cut <= 0) return undefined;
+  const family = slug.slice(0, cut);
+  const level = slug.slice(cut + 1);
+  return available.find(
+    (model) =>
+      (model.nativeId ?? nativeIdFrom(model.id)) === family &&
+      model.settings?.some(
+        (setting) =>
+          setting.id === "effort" && setting.options.some((option) => option.value === level),
+      ),
+  );
 }
 
 /** Budget fallback, not a provider limit: modern Codex/Claude get 128k; other
@@ -1269,4 +1306,7 @@ function pickDefaultId(harness: HarnessId, models: AgentModel[]): string {
   );
 }
 
+// Last session's lists stand in until this run probes; probes already finished replay over them.
+for (const [harness, models] of Object.entries(readCachedCatalogs()))
+  setHarnessModels(harness as HarnessId, models, false);
 attachProbedCatalogConsumer(setHarnessModels);

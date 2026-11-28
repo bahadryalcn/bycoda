@@ -13,9 +13,14 @@ type Pan = {
 /** Middle drag follows each axis's scroll owner, leaving primary drag and touch untouched. */
 export function useJiraBoardPan() {
   const pan = useRef<Pan | null>(null);
+  // `data-panning` drives the grabbing cursor, so the held middle button reads as a pan.
+  const end = (root: HTMLElement) => {
+    pan.current = null;
+    delete root.dataset.panning;
+  };
   const stop = (event: PointerEvent<HTMLDivElement>) => {
     if (pan.current?.pointer !== event.pointerId) return;
-    pan.current = null;
+    end(event.currentTarget);
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
   };
@@ -44,6 +49,7 @@ export function useJiraBoardPan() {
         left: horizontal.scrollLeft,
         top: vertical.scrollTop,
       };
+      root.dataset.panning = "";
       root.setPointerCapture(event.pointerId);
     },
     onPointerMove: (event: PointerEvent<HTMLDivElement>) => {
@@ -54,9 +60,7 @@ export function useJiraBoardPan() {
     },
     onPointerUp: stop,
     onPointerCancel: stop,
-    onLostPointerCapture: () => {
-      pan.current = null;
-    },
+    onLostPointerCapture: (event: PointerEvent<HTMLDivElement>) => end(event.currentTarget),
     onAuxClick: (event: MouseEvent<HTMLDivElement>) => {
       if (event.button === 1) event.preventDefault();
     },

@@ -419,6 +419,17 @@ function SearchableSelectMenu({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  // The row the pointer highlighted. It is never scrolled into view: revealing it would fight the
+  // wheel, so only keyboard, search and opening moves (moveActive) reveal the active row.
+  const [hovered, setHovered] = useState(-1);
+  const moveActive = (index: number) => {
+    setHovered(-1);
+    setActive(index);
+  };
+  const hover = (index: number) => {
+    setHovered(index);
+    setActive(index);
+  };
   const [groupKey, setGroupKey] = useState(ALL_GROUPS);
   const [menuWidth, setMenuWidth] = useState<number>();
   const pointerMoved = usePointerMovement();
@@ -479,6 +490,7 @@ function SearchableSelectMenu({
   const firstInspectable = filtered.findIndex(canInspectPickerOption);
   const activeIndex = canInspectPickerOption(filtered[active]) ? active : firstInspectable;
   const activeId = activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined;
+  const revealActive = activeIndex !== hovered;
   const failed = error != null && error !== false && error !== "";
   const popoverLayer =
     layer ?? (root.current?.closest('[role="dialog"]') ? LAYER.dialogPopover : LAYER.popover);
@@ -499,7 +511,7 @@ function SearchableSelectMenu({
     const committed = options.findIndex(
       (option) => values.includes(option.value) && !option.disabled,
     );
-    setActive(committed >= 0 ? committed : Math.max(0, options.findIndex(canInspectPickerOption)));
+    moveActive(committed >= 0 ? committed : Math.max(0, options.findIndex(canInspectPickerOption)));
     setOpen(true);
   };
 
@@ -513,17 +525,21 @@ function SearchableSelectMenu({
   }, [open, searchable]);
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || !revealActive) return;
     const container = list.current;
     const item = activeOption.current;
     if (!container || !item) return;
     const bounds = container.getBoundingClientRect();
     const row = item.getBoundingClientRect();
-    if (row.top < bounds.top) container.scrollTop -= bounds.top - row.top;
+    // The sticky heading of the row's group covers the list top; keep the active row below it.
+    const heading = item.closest('[role="group"]')?.firstElementChild;
+    const top =
+      bounds.top + (heading && heading !== item ? heading.getBoundingClientRect().height : 0);
+    if (row.top < top) container.scrollTop -= top - row.top;
     else if (row.bottom > bounds.bottom) {
       container.scrollTop += row.bottom - bounds.bottom;
     }
-  }, [activeIndex, open]);
+  }, [activeIndex, open, revealActive]);
 
   const pick = (next: string) => {
     if (disabled || readOnly || optionLookup.get(next)?.disabled) return;
@@ -571,31 +587,31 @@ function SearchableSelectMenu({
           (at + (event.key === "PageDown" ? 1 : -1) + groupSegments.length) % groupSegments.length
         ]!;
       setGroupKey(next.value);
-      setActive(0);
+      moveActive(0);
       return;
     }
     if ((event.key === "Home" || event.key === "End") && event.target instanceof HTMLInputElement)
       return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      if (filtered.length > 0) setActive(step(activeIndex, 1));
+      if (filtered.length > 0) moveActive(step(activeIndex, 1));
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      if (filtered.length > 0) setActive(step(activeIndex, -1));
+      if (filtered.length > 0) moveActive(step(activeIndex, -1));
       return;
     }
     if (event.key === "Home") {
       event.preventDefault();
-      setActive(Math.max(0, firstInspectable));
+      moveActive(Math.max(0, firstInspectable));
       return;
     }
     if (event.key === "End") {
       event.preventDefault();
       let last = filtered.length - 1;
       while (last > 0 && !canInspectPickerOption(filtered[last])) last--;
-      setActive(Math.max(0, last));
+      moveActive(Math.max(0, last));
       return;
     }
     if (event.key === "Enter") {
@@ -818,7 +834,7 @@ function SearchableSelectMenu({
               value={query}
               onValueChange={(next) => {
                 setQuery(next);
-                setActive(0);
+                moveActive(0);
               }}
               onKeyDown={onSearchKeyDown}
             />
@@ -829,7 +845,7 @@ function SearchableSelectMenu({
               value={groupKey}
               onChange={(next) => {
                 setGroupKey(next);
-                setActive(0);
+                moveActive(0);
               }}
             />
           ) : null}
@@ -862,6 +878,7 @@ function SearchableSelectMenu({
             listRef={list}
             options={filtered}
             activeIndex={activeIndex}
+            revealActive={revealActive}
             windowed={options.length > COLLECTION_WINDOW_THRESHOLD}
             query={normalizedQuery}
             id={listId}
@@ -888,7 +905,7 @@ function SearchableSelectMenu({
                 setSize={entryIndex === undefined ? undefined : filtered.length}
                 controlDisabled={disabled}
                 onPick={pickLatest}
-                onHover={setActive}
+                onHover={hover}
                 pointerMoved={pointerMoved}
               />
             )}

@@ -28,6 +28,7 @@ export function FolderRow({
   done,
   needsApproval,
   groupIcon,
+  total,
   onPointerDown,
   onToggle,
   onContextMenu,
@@ -39,6 +40,8 @@ export function FolderRow({
   folder: Pick<SessionFolder, "name" | "colorIndex" | "customColor">;
   nameNode?: ReactNode;
   sessions: SessionSummary[];
+  /** The group's full size when only part of it is loaded; defaults to the listed sessions. */
+  total?: number;
   expanded: boolean;
   busy: boolean;
   done: boolean;
@@ -53,7 +56,7 @@ export function FolderRow({
   menuOpen?: boolean;
 }) {
   const t = useT();
-  const count = sessions.length;
+  const count = total ?? sessions.length;
   const accent = folderAccent(folder.colorIndex, folder.customColor);
   const actionCount = (onNewSession ? 1 : 0) + (onOpenMenu ? 1 : 0);
   const trailing = (

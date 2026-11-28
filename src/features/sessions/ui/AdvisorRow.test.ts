@@ -122,6 +122,15 @@ it("shows failure details and keeps advice collapsible", () => {
   expect(details.open).toBe(false);
 });
 
+it("stops saying it is thinking once the session is idle and the call never got an answer", () => {
+  act(() =>
+    root.render(createElement(AdvisorRow, { block: advisor("pending"), sessionBusy: false })),
+  );
+  expect(container.textContent).toContain("Advisor");
+  expect(container.textContent).not.toContain("Thinking…");
+  expect(container.querySelector('[data-working-variant], [class*="sweep"]')).toBeNull();
+});
+
 it("keeps an encrypted advisor result a plain row with nothing to open", () => {
   act(() => root.render(createElement(AdvisorRow, { block: advisor("completed") })));
   expect(container.textContent).toContain("Advisor");

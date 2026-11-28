@@ -780,6 +780,47 @@ it("shows no group filter unless asked for and two groups exist", async () => {
   expect(filterButtons()).toHaveLength(0);
 });
 
+it("reveals the active row after keyboard moves but never scrolls to a hovered row", async () => {
+  await act(async () =>
+    root.render(
+      createElement(SearchableSelect, {
+        label: "Project",
+        value: "alpha",
+        onChange: vi.fn(),
+        options: [
+          { value: "alpha", label: "Alpha" },
+          { value: "beta", label: "Beta" },
+          { value: "gamma", label: "Gamma" },
+        ],
+      }),
+    ),
+  );
+  // Every row sits below the list's bottom edge, so any reveal would scroll.
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const rect = (top: number, bottom: number) =>
+      ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top }) as DOMRect;
+    return this.getAttribute("role") === "option" ? rect(200, 230) : rect(0, 100);
+  });
+  await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+  const list = document.body.querySelector<HTMLElement>('[role="listbox"]')!;
+  list.scrollTop = 0;
+  const rows = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'));
+  await act(async () =>
+    rows[2]!.dispatchEvent(
+      new MouseEvent("pointermove", { bubbles: true, clientX: 10, clientY: 210 }),
+    ),
+  );
+  expect(rows[2]!.dataset.active).toBe("true");
+  expect(list.scrollTop).toBe(0);
+  const input = document.body.querySelector<HTMLInputElement>('[role="combobox"]')!;
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })),
+  );
+  expect(list.scrollTop).toBeGreaterThan(0);
+});
+
 it("sizes the menu from menuMinWidth and menuMaxHeight, defaulting to 240", async () => {
   await renderGrouped();
   await openMenu();

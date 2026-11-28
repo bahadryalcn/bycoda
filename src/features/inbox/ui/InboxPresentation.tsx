@@ -299,6 +299,7 @@ export function InboxProjectPicker({
         hideLabel
         label={t("Choose project")}
         disabled={!projects.length}
+        menuMaxHeight={380}
         value={selected?.path ?? value}
         options={[
           ...(value && !selected

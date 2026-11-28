@@ -11,6 +11,7 @@ export type ScrollAreaProps<T extends ScrollTag = "div"> = ComponentPropsWithRef
    * `auto` (default) shows the shared scrollbar family set in Appearance; `hidden` keeps the
    * content scrollable without a bar (tab strips, chip rows). `always` forces the primary
    * axis to scroll; for `both`, it forces the horizontal axis and leaves vertical automatic.
+   * Its thumb stays painted without hover, so off-screen content is visible at a glance.
    */
   scrollbar?: "auto" | "hidden" | "always";
   /** `stable` reserves the bar's space so content does not shift when the bar appears. */

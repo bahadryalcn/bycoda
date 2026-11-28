@@ -245,3 +245,14 @@ Recorded decision:
 - All overlays are opaque and theme-bound, with no private frost or palette. Density is the saved preference; narrow panes (down to 320 px) change arrangement only. Product code imports shared adapters, never `src/shared/ui/arc/*`.
 
 Rule text: docs/reference/DESIGN.md, docs/reference/ui-design-system.md, docs/reference/arc-ui.md
+
+## Collapsed rail icons show their name on hover
+
+Owner decision, 2026-11-28, source: owner UI review (translated from Turkish):
+
+> No tooltip appears at all when I hover over the icons, I can't tell what anything is.
+
+Recorded decision:
+
+- Every action in the collapsed left rail (`CompactRailAction` in `src/app/shell/Sidebar.tsx`) passes `tooltip={label}` (right side) in addition to the accessible name, with its shortcut when bound. This is the exception to "an icon-only action has an accessible name, not a tooltip" for icon-only rails whose icons carry no visible text; `tooltip-repeats-label` does not flag an `iconOnly` Button.
+- The rail has one button size, `icon-sm` glyphs at stroke 1.75, one gap and one divider. The Workspace action is always present and selected while the workspace is on screen.

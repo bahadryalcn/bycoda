@@ -10,7 +10,7 @@ import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { QRCodeSVG } from "qrcode.react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { watchPairingView } from "../../account";
 import { t, useLocale } from "../../../shared/i18n";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -116,7 +116,7 @@ export function PhonePairingFlow({
   const lanCopy = {
     label: t("Local network access"),
     setup: t(
-      "Enable local network access to connect your phone. Pairing and workspace data are encrypted.",
+      "Your phone connects while it is on the same Wi-Fi as this computer. Pairing and workspace data are encrypted.",
     ),
     unavailable: t(
       "Local network access is unavailable. Check your computer's network and firewall, then try again.",
@@ -133,7 +133,7 @@ export function PhonePairingFlow({
         ? {
             label: t("Tailscale (private) access"),
             setup: t(
-              "Enable Tailscale access to connect your phone. Only devices signed in to the same Tailscale network can connect, and this computer is never reachable from the public internet.",
+              "Your phone connects from anywhere through your Tailscale network. Only devices in it can reach this computer, never the public internet.",
             ),
             unavailable: t(
               "Tailscale is not connected on this computer. Install Tailscale and sign in on this computer and your phone, then check again.",
@@ -173,6 +173,26 @@ export function PhonePairingFlow({
       {t("Show QR code")}
     </Button>
   );
+  // Choosing the network already says how the phone connects: one action opens the listener and
+  // shows the code, with no separate switch to find first.
+  const turnOn = (
+    <Button
+      stableWidth
+      type="button"
+      onClick={() => onEnable(addresses.includes(address) ? address : undefined)}
+      variant="primary"
+    >
+      {t("Turn on and show QR code")}
+    </Button>
+  );
+  const primary = (action: ReactNode) =>
+    inline ? (
+      <div className="self-start">{action}</div>
+    ) : (
+      <ModalFooter>
+        <ModalActions>{action}</ModalActions>
+      </ModalFooter>
+    );
 
   return (
     <div
@@ -222,13 +242,7 @@ export function PhonePairingFlow({
             <InlineMessage tone="info">{state.access.reason}</InlineMessage>
           ) : null}
           {state.access.state === "ready" ? (
-            inline ? (
-              <div className="self-start">{showCode}</div>
-            ) : (
-              <ModalFooter>
-                <ModalActions>{showCode}</ModalActions>
-              </ModalFooter>
-            )
+            primary(showCode)
           ) : (
             <>
               {/* The network hint above already explains a bare failure; the Host reason adds to it. */}
@@ -257,31 +271,28 @@ export function PhonePairingFlow({
                 />
               ) : null}
               {state.access.state === "setup-required" ? (
-                <Switch
-                  checked={false}
-                  onCheckedChange={() =>
-                    onEnable(addresses.includes(address) ? address : undefined)
-                  }
-                  label={copy.label}
-                />
-              ) : null}
-              {mode === "tailscale" && state.access.state === "unavailable" && !addresses.length ? (
-                <PhonePairingLink url="https://tailscale.com/download" label={t("Get Tailscale")} />
-              ) : null}
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  stableWidth
-                  type="button"
-                  className="shrink-0"
-                  onClick={
-                    state.access.state === "unavailable" && addresses.length > 0
-                      ? () => onEnable(selectedAddress)
-                      : onRefresh
-                  }
-                >
-                  {t("Check again")}
-                </Button>
-              </div>
+                primary(turnOn)
+              ) : (
+                <>
+                  {/* Only a missing or broken network needs a recheck, after fixing it outside. */}
+                  {mode === "tailscale" && !addresses.length ? (
+                    <PhonePairingLink
+                      url="https://tailscale.com/download"
+                      label={t("Get Tailscale")}
+                    />
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      stableWidth
+                      type="button"
+                      className="shrink-0"
+                      onClick={addresses.length > 0 ? () => onEnable(selectedAddress) : onRefresh}
+                    >
+                      {t("Check again")}
+                    </Button>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

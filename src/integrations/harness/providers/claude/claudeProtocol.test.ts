@@ -41,6 +41,7 @@ import {
   toClaudePermissionResult,
   serverToolResultFromEvent,
   serverToolResultsFromAssistant,
+  previewFromTool,
   toolKindFromName,
   toolStartFromEvent,
   toolTitle,
@@ -332,6 +333,7 @@ describe("stream mapping", () => {
       id: "toolu_1",
       name: "Read",
       input: { file_path: "a.ts" },
+      server: false,
     });
   });
 });
@@ -764,6 +766,40 @@ describe("list_models catalog", () => {
 describe("helpers", () => {
   it("parses CLI version strings", () => {
     expect(parseClaudeVersion("2.1.233 (Claude Code)")).toBe("2.1.233");
+  });
+
+  it("titles ToolSearch as loading or searching tools, never a file search", () => {
+    const name = "ToolSearch";
+    const input = {
+      query: "select:WebSearch,mcp__bycoda-conversation__conversation_agents_delegate,mcp__bycoda-conversation__conversation_agents_options",
+      max_results: 5,
+    };
+    expect(toolKindFromName(name)).not.toBe("search");
+    expect(toolTitle(name, input)).toBe("Load tools: WebSearch, agents delegate, agents options");
+    expect(toolTitle(name, { query: "notebook jupyter" })).toBe("Search tools: notebook jupyter");
+    expect(previewFromTool(name, input)).toBeUndefined();
+  });
+
+  it("titles bycoda conversation calls by their task, not words inside the prompt", () => {
+    const delegate = "mcp__bycoda-conversation__conversation_agents_delegate";
+    const prompt = "Read only README.md in the project root (G:/proj/README.md). Reply briefly.";
+    expect(toolTitle(delegate, { requestId: "r", title: "Summarize README", prompt })).toBe(
+      "Summarize README",
+    );
+    expect(toolTitle(delegate, { requestId: "r", prompt })).toBe(
+      "Read only README.md in the project root (G:/proj/README.md). Reply briefly.",
+    );
+    expect(previewFromTool(delegate, { title: "t", prompt })).toBeUndefined();
+    const consult = "mcp__bycoda-conversation__conversation_agents_consult";
+    expect(toolTitle(consult, { question: "Search the web for X?\nmore" })).toBe(
+      "Search the web for X?",
+    );
+    expect(toolTitle("mcp__bycoda-conversation__conversation_agents_options", {})).toBe(
+      "List delegate models",
+    );
+    expect(toolTitle("mcp__bycoda-conversation__conversation_agents_wait", {})).toBe(
+      "Wait for a subagent",
+    );
   });
 
   it("classifies tools and todo plans", () => {

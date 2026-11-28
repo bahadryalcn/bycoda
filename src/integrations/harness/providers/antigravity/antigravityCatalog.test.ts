@@ -67,27 +67,55 @@ describe("antigravity catalog on the stream-json transport", () => {
     expect(mock.setModels).not.toHaveBeenCalled();
   });
 
-  it("publishes every Gemini 4 family and listed effort without inventing account entitlements", async () => {
-    const rows = [
-      ...["carbon", "argon", "neon", "hydrogen"].flatMap((family) =>
-        ["low", "medium", "high", ...(["neon", "hydrogen"].includes(family) ? ["xhigh"] : [])].map(
-          (effort) => [`gemini-4-${family}-${effort}`, `Gemini 4 ${family} (${effort})`],
-        ),
-      ),
+  it("publishes each Gemini 4 family once with only its listed efforts", async () => {
+    const levels = (family: string) => [
+      "low",
+      "medium",
+      "high",
+      ...(["neon", "hydrogen"].includes(family) ? ["xhigh"] : []),
+    ];
+    const families = ["carbon", "argon", "neon", "hydrogen"];
+    const orchestrators = [
       ["orchestrator-neon", "Orchestrator (Neon)"],
       ["orchestrator-carbon", "Orchestrator (Carbon)"],
       ["orchestrator-argon", "Orchestrator (Argon)"],
+    ];
+    const rows = [
+      ...families.flatMap((family) =>
+        levels(family).map((effort) => [
+          `gemini-4-${family}-${effort}`,
+          `Gemini 4 ${family} (${effort})`,
+        ]),
+      ),
+      ...orchestrators,
     ];
     mock.exec.mockResolvedValue(rows.map((row) => row.join("\t")).join("\n"));
     await refreshAntigravityCatalog();
     expect(mock.setModels).toHaveBeenLastCalledWith(
       "antigravity",
-      rows.map(([nativeId, name]) => ({
-        id: `antigravity:${nativeId}`,
-        harness: "antigravity",
-        nativeId,
-        name,
-      })),
+      [
+        ...families.map((family) => ({
+          id: `antigravity:gemini-4-${family}`,
+          harness: "antigravity",
+          nativeId: `gemini-4-${family}`,
+          name: `Gemini 4 ${family}`,
+          settings: [
+            {
+              id: "effort",
+              label: "Reasoning",
+              kind: "select",
+              value: "high",
+              options: levels(family).map((effort) => ({ value: effort, label: effort })),
+            },
+          ],
+        })),
+        ...orchestrators.map(([nativeId, name]) => ({
+          id: `antigravity:${nativeId}`,
+          harness: "antigravity",
+          nativeId,
+          name,
+        })),
+      ],
       true,
     );
 

@@ -9,6 +9,7 @@ import type {
   ToolPreviewKind,
   ToolPreviewLine,
 } from "../../../features/sessions/model/session";
+import { bycodaConversationLabel } from "../../../shared/model/bycodaConversationLabels";
 import { displayPath } from "../../../shared/lib/paths";
 import { isWebSearchName, searchSourcesFromText } from "../../../shared/model/searchSources";
 import type { HarnessFileChange } from "./types";
@@ -47,6 +48,8 @@ export function extractToolPreview(
     coerceString(update.name) ??
     coerceString(tool.name);
   const rawKind = (coerceString(update.kind) ?? coerceString(tool.kind) ?? "").toLowerCase();
+  if (isToolSearchName(title) || isToolSearchName(rawKind)) return undefined;
+  const bycodaTool = bycodaConversationTool(title) ?? bycodaConversationTool(rawKind);
   const inputs = inputRecords(
     update.rawInput ?? update.raw_input ?? update.input,
     tool.rawInput ?? tool.raw_input ?? tool.input,
@@ -55,6 +58,11 @@ export function extractToolPreview(
     update,
     tool,
   );
+  if (bycodaTool) {
+    // The prompt and result are prose: only the model ref (`grok:grok-4.6`) is kept, for a failed call's card.
+    const model = inputs.map((raw) => coerceString(raw.model)).find(Boolean);
+    return model && looksLikeToolPath(model) ? { kind: "read", title, path: model } : undefined;
+  }
   const content = update.content ?? tool.content;
   const diff = extractDiff(content);
   const path = extractPath(update, tool, inputs, diff?.path);
@@ -329,12 +337,58 @@ export function extractSearchQuery(value: unknown): string | undefined {
   return undefined;
 }
 
+/** `mcp__bycoda-conversation__x` / `bycoda-conversation:x` -> the tool part `x`. */
+function bycodaConversationTool(value?: string): string | undefined {
+  return value?.trim().match(/^(?:mcp__)?bycoda-conversation(?:__|:)(\w+)$/i)?.[1];
+}
+
+/** Claude's deferred-tool loader. Its `query` names tools, never files. */
+export function isToolSearchName(value?: string): boolean {
+  return value?.trim().toLowerCase() === "toolsearch";
+}
+
+function humanToolName(value: string): string {
+  const tool = value.trim().replace(/^mcp__[^_]+(?:-[^_]+)*__/, "");
+  return tool.replace(/^conversation_/, "").replace(/_/g, " ");
+}
+
+/**
+ * Titles for tools whose input must not be read as file or search words: the
+ * ToolSearch loader and the bycoda conversation tools (a delegate's prompt can
+ * start with "Read only ..."). Undefined for every other tool.
+ */
+function specialToolTitle(name: string, input: Record<string, unknown>): string | undefined {
+  if (isToolSearchName(name)) {
+    const query = coerceString(input.query)?.trim() ?? "";
+    const select = query.match(/^select:(.*)$/i)?.[1];
+    if (select !== undefined) {
+      const names = select
+        .split(",")
+        .map(humanToolName)
+        .filter(Boolean);
+      return names.length ? `Load tools: ${names.join(", ")}` : "Load tools";
+    }
+    return query ? `Search tools: ${query}` : "Search tools";
+  }
+  const action = bycodaConversationTool(name);
+  if (!action) return undefined;
+  if (/agents_(delegate|consult)$/.test(action)) {
+    for (const key of ["title", "task", "description", "question", "prompt"]) {
+      const line = firstLine(coerceString(input[key]));
+      if (line) return line;
+    }
+  }
+  return bycodaConversationLabel(`bycoda-conversation:${action}`) ?? humanToolName(action);
+}
+
 /** Shared title builder used by Claude, Pi, and OpenCode tool mappers. */
 export function titleFromToolInput(
   name: string,
   kind: string,
   input: Record<string, unknown>,
 ): string {
+  const special = specialToolTitle(name, input);
+  if (special) return special;
   if (isAgentToolName(name) || isAgentTool(kind)) {
     return agentToolTitle(input, name);
   }
@@ -691,13 +745,14 @@ export function summarizeFileChanges(
 ): ToolFileChange[] {
   const summaries = changes.map(({ path, kind, contents }): ToolFileChange => {
     if (kind === "update") {
-      if (!/^@@\s+-\d+(?:,\d+)?\s+\+\d+/m.test(contents)) return { path };
+      if (!/^@@\s+-\d+(?:,\d+)?\s+\+\d+/m.test(contents)) return { path, status: "modified" };
       const { additions, deletions } = parseGitPatch(contents);
-      return { path, counts: { additions, deletions } };
+      return { path, status: "modified", counts: { additions, deletions } };
     }
     const lines = textLines(contents).length;
     return {
       path,
+      status: kind === "add" ? "added" : "deleted",
       counts: { additions: kind === "add" ? lines : 0, deletions: kind === "delete" ? lines : 0 },
     };
   });

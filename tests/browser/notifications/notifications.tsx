@@ -29,9 +29,11 @@ import "../../../src/styles/index.css";
 
 // Synthetic requests only; native actions cannot reach the owner's host.
 mockWindows("main");
-mockIPC(() => []);
-setLanguagePreference("en");
 const params = new URLSearchParams(location.search);
+// `?localHost=updating` shows the local Host notice in the pending card.
+const localHost = params.get("localHost");
+mockIPC((command) => (command === "local_host_status" && localHost ? { state: localHost } : []));
+setLanguagePreference("en");
 applyThemePreference(params.get("theme") === "light" ? "light" : "dark");
 type Notice = ComponentProps<typeof ApprovalToasts>["notices"][number];
 const titles = [

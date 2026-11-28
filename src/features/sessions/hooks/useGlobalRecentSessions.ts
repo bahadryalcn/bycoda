@@ -1,58 +1,34 @@
 import { useGracedFailure } from "../../connections/public/transientFailure";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SessionSummary } from "../data/sessionStore";
 import {
-  finalizeRecentSessionPages,
-  listRecentSessionsSincePage,
-  type RecentSessionCursor,
-  type SessionSummary,
-} from "../data/sessionStore";
+  EMPTY_CATALOG,
+  SessionCatalog,
+  sameSummaryRows,
+  type CatalogQuery,
+  type CatalogSegmentKey,
+  type CatalogSegmentState,
+  type CatalogSnapshot,
+} from "../data/sessionCatalog";
+import type { SettledMark } from "../data/sessionListFeed";
 import type { Session } from "../model/session";
-import {
-  GLOBAL_RECENT_WINDOW_MS,
-  mergeGlobalRecentSessions,
-  withinGlobalRecentWindow,
-} from "../model/globalRecentSessions";
+import { mergeGlobalRecentSessions } from "../model/globalRecentSessions";
+import { useSessionLifecycleSnapshot } from "../model/sessionLifecycleClient";
 import { isRemoteProjectPath } from "../../projects/public/recents";
-import { pathKey } from "../../../shared/lib/paths";
+import { pathKey, projectKey } from "../../../shared/lib/paths";
 import { remoteSessionFor } from "../../connections/public/connections";
-import { t } from "../../../shared/i18n";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 
+export type { CatalogSegmentKey } from "../data/sessionCatalog";
+
 const NO_ROWS: SessionSummary[] = [];
 const NO_PROJECTS: readonly string[] = [];
+const NO_QUERY: CatalogQuery = {};
+const IDLE_SEGMENT: CatalogSegmentState = { status: "idle", loaded: 0 };
 
-// Summaries contain only small wire metadata, never transcript bodies. Compare
-// nested metadata too: updatedAt alone does not cover pin or provider changes.
-function sameRecentValue(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true;
-  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return (
-      Array.isArray(a) &&
-      Array.isArray(b) &&
-      a.length === b.length &&
-      a.every((value, index) => sameRecentValue(value, b[index]))
-    );
-  }
-  const left = a as Record<string, unknown>,
-    right = b as Record<string, unknown>;
-  const keys = Object.keys(left);
-  return (
-    keys.length === Object.keys(right).length &&
-    keys.every(
-      (key) =>
-        Object.prototype.hasOwnProperty.call(right, key) && sameRecentValue(left[key], right[key]),
-    )
-  );
-}
-
-function sameRecentRows(previous: SessionSummary[], next: SessionSummary[]): boolean {
-  return (
-    previous.length === next.length &&
-    previous.every((row, index) => sameRecentValue(row, next[index]))
-  );
-}
+/** `cwd` is one stored path of the project, for its name and icon before any row loads. */
+export type CatalogProject = { key: string; cwd: string; count: number; latestActivityAt: number };
 
 export function useGlobalRecentSessions(
   history: readonly SessionSummary[],
@@ -67,15 +43,45 @@ export function useGlobalRecentSessions(
   error: string | null;
   remoteHistoryLimited: boolean;
   refresh: () => void;
+  /** Owned by the Sidebar; changing it resets every segment. */
+  setQuery: (query: { since?: number; title?: string; archived?: boolean }) => void;
+  catalog: {
+    projects: CatalogProject[];
+    settledCount: number;
+    segment: (key: CatalogSegmentKey) => CatalogSegmentState;
+    loadMore: (key: CatalogSegmentKey) => void;
+  };
 } {
-  const [stored, setStored] = useState<SessionSummary[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [view, setView] = useState<CatalogSnapshot>(EMPTY_CATALOG);
   const [failure, setFailure] = useState<{ cause: unknown } | null>(null);
-  const [clock, setClock] = useState(() => Date.now());
-  const loaded = useRef(false);
-  const running = useRef<Promise<void> | null>(null);
-  const refreshRun = useRef<(() => void) | null>(null);
-  const refresh = useCallback(() => refreshRun.current?.(), []);
+  const [query, setQueryState] = useState<CatalogQuery>(NO_QUERY);
+  const engine = useRef<SessionCatalog | null>(null);
+  const { views } = useSessionLifecycleSnapshot();
+  // The Host's settled records are the native list's settle state; only a change of them matters.
+  const marksKey = JSON.stringify(
+    [...views.values()]
+      .filter((entry) => entry.state === "settled")
+      .map((entry): SettledMark => ({ id: entry.sessionId, settledAt: entry.settledAt ?? null }))
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+  );
+  const refresh = useCallback(() => engine.current?.refresh(), []);
+  const setQuery = useCallback((next: { since?: number; title?: string; archived?: boolean }) => {
+    const title = next.title?.trim() || undefined;
+    const archived = next.archived === true;
+    setQueryState((previous) =>
+      previous.since === next.since &&
+      previous.title === title &&
+      (previous.archived ?? false) === archived
+        ? previous
+        : {
+            ...(next.since === undefined ? {} : { since: next.since }),
+            ...(title ? { title } : {}),
+            ...(archived ? { archived } : {}),
+          },
+    );
+  }, []);
+  const loadMore = useCallback((key: CatalogSegmentKey) => engine.current?.loadMore(key), []);
+  const latest = useStableCallback(() => ({ query, marksKey }));
   const freshKeys = useMemo(() => new Set(freshRemoteProjects.map(pathKey)), [freshRemoteProjects]);
   // Only the open panel reads the rows, so a closed one builds nothing: tool starts and status
   // changes in any open session would otherwise re-merge all history and rescan every live
@@ -97,155 +103,54 @@ export function useGlobalRecentSessions(
       );
     };
     return mergeGlobalRecentSessions(
-      stored.filter(keep),
+      view.stored.filter(keep),
       [...history.filter(keep), ...remoteRows],
       sessions.filter(keep),
       allowedProjectKeys,
+      query.archived === true,
     );
-  }, [enabled, stored, history, sessions, allowedProjectKeys, remoteRows, freshKeys]);
-  const projectedRows = useMemo(() => withinGlobalRecentWindow(merged, clock), [merged, clock]);
-  const rows = useStableValue(projectedRows, sameRecentRows);
-  const updateClock = useStableCallback(() => {
-    const now = Date.now();
-    if (!sameRecentRows(rows, withinGlobalRecentWindow(merged, now))) setClock(now);
-  });
-  const publishStored = useStableCallback((next: SessionSummary[]) => {
-    if (!sameRecentRows(stored, next)) setStored(next);
-  });
-  const clearFailure = useStableCallback(() => {
-    if (failure) setFailure(null);
-  });
-  const publishLoading = useStableCallback((next: boolean) => {
-    if (loading !== next) setLoading(next);
-  });
-  // Referential churn alone must not restart a seven-day scan. The active
-  // history projection still invalidates it when membership or data changes.
-  const historyKey = useMemo(
-    () =>
-      enabled
-        ? JSON.stringify(
-            history
-              .map((row) => [
-                row.cwd,
-                row.id,
-                row.lastActivityAt ?? row.updatedAt,
-                row.pinned,
-                row.archived,
-              ])
-              .sort(
-                (a, b) =>
-                  String(a[0]).localeCompare(String(b[0])) ||
-                  String(a[1]).localeCompare(String(b[1])),
-              ),
-          )
-        : "",
-    [enabled, history],
-  );
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Sync the recent cutoff and refresh with the minute timer and window visibility.
+  }, [
+    enabled,
+    view.stored,
+    history,
+    sessions,
+    allowedProjectKeys,
+    remoteRows,
+    freshKeys,
+    query.archived,
+  ]);
+  const rows = useStableValue(merged, sameSummaryRows);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Own the paged native catalog while the panel is open: it polls the store revision, refetches on focus and stops with the panel.
   useEffect(() => {
     if (!enabled) return;
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (!cancelled) updateClock();
-    });
-    const tickNow = () => {
-      updateClock();
-      refresh();
-    };
-    const timer = window.setInterval(() => {
-      if (!document.hidden) tickNow();
-    }, 60_000);
-    const onVisible = () => {
-      if (!document.hidden) tickNow();
-    };
-    document.addEventListener("visibilitychange", onVisible);
+    const initial = latest();
+    const marks = JSON.parse(initial.marksKey) as SettledMark[];
+    const catalog = new SessionCatalog(
+      {
+        onChange: setView,
+        onError: (cause) => setFailure(cause === null ? null : { cause }),
+      },
+      initial.query,
+      marks,
+      initial.marksKey,
+    );
+    engine.current = catalog;
+    catalog.start();
     return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
+      catalog.stop();
+      engine.current = null;
+      setView(EMPTY_CATALOG);
+      setFailure(null);
     };
-  }, [enabled, refresh, updateClock]);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Own the debounced native page stream and cancel superseded requests until physical completion.
+  }, [enabled, latest]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Push the owner's query into the running catalog, which resets its segments.
   useEffect(() => {
-    if (!enabled) return;
-    let cancelRun = () => {};
-    const schedule = () => {
-      cancelRun();
-      let cancelled = false;
-      if (!loaded.current)
-        queueMicrotask(() => {
-          if (!cancelled) publishLoading(true);
-        });
-      const timer = window.setTimeout(() => {
-        const start = async () => {
-          // One native page stream at a time; superseded runs stop at the next
-          // response and the latest request waits for that physical completion.
-          const previous = running.current;
-          if (previous) await previous;
-          if (cancelled) return;
-          const work = (async () => {
-            const since = Date.now() - GLOBAL_RECENT_WINDOW_MS;
-            for (let attempt = 0; attempt < 3; attempt++) {
-              const collected: SessionSummary[] = [];
-              let cursor: RecentSessionCursor | null = null;
-              const cursors = new Set<string>();
-              try {
-                do {
-                  const page = await listRecentSessionsSincePage(since, cursor);
-                  if (cancelled) return;
-                  collected.push(...page.rows);
-                  cursor = page.nextCursor;
-                  if (cursor) {
-                    const key = JSON.stringify(cursor);
-                    if (cursors.has(key)) throw new Error("Recent-session cursor did not advance.");
-                    cursors.add(key);
-                  }
-                } while (cursor);
-                if (!cancelled) {
-                  publishStored(finalizeRecentSessionPages(collected, since));
-                  clearFailure();
-                  loaded.current = true;
-                }
-                return;
-              } catch (reason) {
-                if (cancelled) return;
-                if (String(reason).includes("RECENT_SESSIONS_CHANGED")) {
-                  if (attempt < 2) continue;
-                  setFailure({ cause: t("Recent sessions changed while loading. Retry shortly.") });
-                } else {
-                  setFailure({ cause: reason });
-                }
-                return;
-              }
-            }
-          })();
-          running.current = work;
-          try {
-            await work;
-          } finally {
-            if (running.current === work) running.current = null;
-          }
-          if (!cancelled) publishLoading(false);
-        };
-        void start().catch((reason: unknown) => {
-          if (!cancelled) {
-            setFailure({ cause: reason });
-            publishLoading(false);
-          }
-        });
-      }, 300);
-      cancelRun = () => {
-        cancelled = true;
-        window.clearTimeout(timer);
-      };
-    };
-    refreshRun.current = schedule;
-    schedule();
-    return () => {
-      cancelRun();
-      refreshRun.current = null;
-    };
-  }, [enabled, historyKey, publishStored, clearFailure, publishLoading]);
+    engine.current?.setQuery(query);
+  }, [query]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Push changed settled records into the running catalog, which re-queries without resetting.
+  useEffect(() => {
+    engine.current?.setMarks(JSON.parse(marksKey) as SettledMark[], marksKey);
+  }, [marksKey]);
   const remoteHistoryLimited = useMemo(
     () => [...allowedProjectKeys].some((key) => isRemoteProjectPath(key) && !freshKeys.has(key)),
     [allowedProjectKeys, freshKeys],
@@ -254,10 +159,35 @@ export function useGlobalRecentSessions(
     error: enabled ? failure?.cause : undefined,
     retry: refresh,
   });
-  const visibleLoading = enabled && (loading || pending);
+  const visibleLoading = enabled && (view.loading || pending);
   const error = visibleError ?? null;
+  const catalog = useMemo(() => {
+    const byProject = new Map<string, CatalogProject>();
+    for (const group of enabled ? view.groups : []) {
+      if (!allowedProjectKeys.has(pathKey(group.cwd))) continue;
+      const key = projectKey(group.cwd);
+      const entry = byProject.get(key) ?? { key, cwd: group.cwd, count: 0, latestActivityAt: 0 };
+      entry.count += group.count;
+      entry.latestActivityAt = Math.max(entry.latestActivityAt, group.latestActivityAt);
+      byProject.set(key, entry);
+    }
+    return {
+      projects: [...byProject.values()].sort((a, b) => b.latestActivityAt - a.latestActivityAt),
+      settledCount: enabled ? view.settledCount : 0,
+      segment: (key: CatalogSegmentKey) => view.segments.get(key) ?? IDLE_SEGMENT,
+      loadMore,
+    };
+  }, [enabled, view, allowedProjectKeys, loadMore]);
   return useMemo(
-    () => ({ rows, loading: visibleLoading, error, remoteHistoryLimited, refresh }),
-    [rows, visibleLoading, error, remoteHistoryLimited, refresh],
+    () => ({
+      rows,
+      loading: visibleLoading,
+      error,
+      remoteHistoryLimited,
+      refresh,
+      setQuery,
+      catalog,
+    }),
+    [rows, visibleLoading, error, remoteHistoryLimited, refresh, setQuery, catalog],
   );
 }

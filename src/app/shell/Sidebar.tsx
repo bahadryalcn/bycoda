@@ -312,7 +312,18 @@ import {
 } from "./sessionListWindow";
 import { SessionFolderListHeader, SessionGroupListRow } from "./SessionFolderListRows";
 import { SessionListItem } from "./SessionListItem";
-import { GlobalSessionListWindow, groupGlobalSessions } from "./GlobalSessionListWindow";
+import {
+  GlobalSessionListWindow,
+  globalSectionNavigationKeys,
+  type GlobalSessionPaging,
+} from "./GlobalSessionListWindow";
+import {
+  buildGlobalSessionSections,
+  globalSessionListPrefs,
+  globalSessionQuerySince,
+  type GlobalSessionCatalogTotals,
+  type GlobalSessionListPrefs,
+} from "../../features/sessions/model/globalSessionSections";
 import { CollectionFooter } from "../../shared/ui/ContinuousList";
 import {
   filterSessionsByHarness,
@@ -429,10 +440,6 @@ import {
 import type { RemoteRailSession } from "../../features/connections/model/remoteRailSessions";
 import { newRequestId } from "../../shared/lib/id/requestId";
 import { requestOpenCrewsPage } from "../../features/crews/model/crewsPage";
-import {
-  requestOpenLiveStreamPage,
-  useLiveStreamPageOpen,
-} from "../../features/live-stream/public/liveStreamPage";
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 const EMPTY_REMINDERS: SessionReminder[] = [];
@@ -469,6 +476,9 @@ type Props = {
     error: string | null;
     refresh: () => void;
     remoteHistoryLimited?: boolean;
+    /** Narrows the paged native history to the list's time window and title search. */
+    setQuery?: (query: { since?: number; title?: string; archived?: boolean }) => void;
+    catalog?: GlobalSessionCatalogTotals & GlobalSessionPaging;
   };
   lastSessionsRemoteRows?: readonly RemoteRailSession[];
   newListedSessionRequest?: number;
@@ -632,7 +642,6 @@ function railProjectKeys(recents: RecentProject[], cwd: string): string[] {
   return [...keys];
 }
 const GLOBAL_SESSION_FILTERS = { ...DEFAULT_SESSION_SIDEBAR_FILTERS, time: "7d" } as const;
-const GLOBAL_SESSION_TIME_FILTERS = ["today", "7d"] as const;
 
 function SidebarComponent({
   lastSessionsOpen = false,
@@ -1289,6 +1298,7 @@ function SidebarComponent({
   const {
     shelve: shelveSettled,
     isSettled,
+    collapsed: settledCollapsed,
     setCollapsed: setSettledCollapsed,
     lifecycle: localLifecycle,
   } = useSettledShelf(!remoteProject || lastSessionsOpen, projectLifecycleViews);
@@ -1480,10 +1490,14 @@ function SidebarComponent({
     }
   };
   const [sessionDrop, setSessionDrop] = useState<SessionListDropTarget | null>(null);
-  const [globalListView, setGlobalListView] = useState<GlobalSessionListView>({
-    groupBy: "none",
-    sort: "newest",
-  });
+  const [globalListPrefs, setGlobalListPrefs] = useState(globalSessionListPrefs.load);
+  const globalListView = globalListPrefs.view;
+  const updateGlobalListPrefs = (next: GlobalSessionListPrefs) => {
+    setGlobalListPrefs(next);
+    globalSessionListPrefs.save(next);
+  };
+  const setGlobalListView = (view: GlobalSessionListView) =>
+    updateGlobalListPrefs({ ...globalListPrefs, view });
   const [filterMenu, setFilterMenu] = useState<{
     x: number;
     y: number;
@@ -1744,10 +1758,21 @@ function SidebarComponent({
   useEffect(() => {
     onSessionNavigationOrder?.(sessionNavigationIds);
   }, [onSessionNavigationOrder, sessionNavigationKey]);
+  // The time filter narrows the project groups only: Pinned and the Settled shelf list every
+  // age, like a project's own list. The Settled filter lists settled sessions by time.
+  const filterGlobalSessionsByTime = (rows: SessionSummary[]) => {
+    const recent = new Set(filterSessionsByTime(rows, globalSessionFilters.time, now));
+    return rows.filter(
+      (session) =>
+        session.pinned ||
+        recent.has(session) ||
+        (!globalSessionFilters.showSettled && isGlobalSessionSettled(session)),
+    );
+  };
   const globalVisibleSessions = lastSessionsOpen
     ? filterSessionsByQuery(
         filterSessionsByStatus(
-          filterSessionsByTime(
+          filterGlobalSessionsByTime(
             filterSessionsByHarness(
               filterAssistantManagedSessions(
                 filterSessionsByArchive(
@@ -1755,15 +1780,15 @@ function SidebarComponent({
                     isListedConversation(row, globalSessionFilters.showBackground),
                   ),
                   globalSessionFilters.showArchived,
+                  // The Settled filter lists only settled sessions; otherwise they go on the shelf.
                 ).filter(
-                  (session) => globalSessionFilters.showSettled === isGlobalSessionSettled(session),
+                  (session) =>
+                    !globalSessionFilters.showSettled || isGlobalSessionSettled(session),
                 ),
                 globalSessionFilters.assistantManaged,
               ),
               globalSessionFilters.hiddenHarnesses,
             ),
-            globalSessionFilters.time,
-            now,
           ),
           globalSessionFilters.status,
           busySessionIds,
@@ -1789,9 +1814,81 @@ function SidebarComponent({
       draft:
         !!session.draft || (!isGlobalSessionActive(session) && globalRank.draftIds.has(session.id)),
     });
-  const globalGroups = groupGlobalSessions(globalVisibleSessions, globalListView, globalStateOf);
-  const globalNavigationIds = [...globalGroups.values()].flatMap((rows) =>
-    rows.map(globalSessionKey),
+  const narrowedByClientFilters =
+    globalSessionFilters.hiddenHarnesses.length > 0 ||
+    globalSessionFilters.assistantManaged ||
+    globalSessionFilters.showBackground ||
+    globalSessionFilters.showSettled ||
+    Object.values(globalSessionFilters.status).some(Boolean);
+  const globalSections = buildGlobalSessionSections(
+    globalVisibleSessions,
+    globalListView,
+    globalStateOf,
+    globalSessionFilters.showSettled ? undefined : isGlobalSessionSettled,
+    // Filters the catalog cannot apply natively keep its project headers but count loaded rows.
+    lastSessionsData?.catalog && narrowedByClientFilters
+      ? {
+          projects: lastSessionsData.catalog.projects.map((project) => ({ ...project, count: 0 })),
+          settledCount: 0,
+        }
+      : lastSessionsData?.catalog,
+  );
+  // The shelf's segment pages every age, newest first. Under the Settled filter with a time
+  // window, once its oldest loaded row is older than the window no later page can show a row.
+  const settledPagingFloor = globalSessionFilters.showSettled
+    ? globalSessionQuerySince(globalSessionFilters.time, now)
+    : undefined;
+  const settledPastFloor =
+    settledPagingFloor !== undefined &&
+    (lastSessionsData?.rows ?? []).some(
+      (session) =>
+        isGlobalSessionSettled(session) &&
+        (session.lastActivityAt ?? session.updatedAt) < settledPagingFloor,
+    );
+  const catalogPaging = lastSessionsData?.catalog;
+  const globalPaging: GlobalSessionPaging | undefined =
+    catalogPaging && settledPastFloor
+      ? {
+          segment: (key) =>
+            key === "settled" ? { status: "done" } : catalogPaging.segment(key),
+          loadMore: catalogPaging.loadMore,
+        }
+      : catalogPaging;
+  const lastSessionsSetQuery = lastSessionsData?.setQuery;
+  const lastSessionsArchived = globalSessionFilters.showArchived;
+  const lastSessionsQuerySince = globalSessionQuerySince(globalSessionFilters.time, now);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- hands the time window and title search to the App-owned native history source, which pages and refreshes outside React
+  useEffect(() => {
+    if (!lastSessionsOpen) return;
+    lastSessionsSetQuery?.({
+      since: lastSessionsQuerySince,
+      title: deferredSearchQuery,
+      archived: lastSessionsArchived,
+    });
+  }, [
+    lastSessionsOpen,
+    lastSessionsSetQuery,
+    lastSessionsQuerySince,
+    deferredSearchQuery,
+    lastSessionsArchived,
+  ]);
+  const isGlobalSectionCollapsed = (key: string) =>
+    key === "settled" ? settledCollapsed : globalListPrefs.collapsed.includes(key);
+  const toggleGlobalSection = (key: string) => {
+    if (key === "settled") {
+      setSettledCollapsed(!settledCollapsed);
+      return;
+    }
+    const collapsed = globalListPrefs.collapsed.includes(key)
+      ? globalListPrefs.collapsed.filter((item) => item !== key)
+      : [...globalListPrefs.collapsed, key];
+    updateGlobalListPrefs({ ...globalListPrefs, collapsed });
+  };
+  const globalNavigationIds = globalSectionNavigationKeys(
+    globalSections,
+    globalListView,
+    isGlobalSectionCollapsed,
+    searchNarrowed,
   );
   const selectionNavigationIds = lastSessionsOpen ? globalNavigationIds : sessionNavigationIds;
   const runGlobalDelete = useSingleFlight(reportGlobalActionFailure);
@@ -1938,16 +2035,22 @@ function SidebarComponent({
     pendingFolderSessionIds.current.clear();
   }, [cwd]);
 
+  const projectOrganization = !!cwd && cwd !== "~";
+  // Last sessions pins across projects, so it needs the reconciled pin state even without a project.
+  const organizationNeeded = projectOrganization || lastSessionsOpen;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- subscribes to the native organization store and reconciles open pin sagas before pin gestures
   useEffect(() => {
-    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !cwd || cwd === "~") return;
+    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !organizationNeeded) return;
     let alive = true;
     let reconciliation = 0;
     const onOrganizationChange = () => {
       const snapshot = cachedSessionOrganization();
       if (!snapshot) return;
       try {
-        setSessionFolders(folderCollapse.overlay(organizationFoldersForProject(snapshot, cwd)));
-        setSessionOrder(organizationOrderForProject(snapshot, cwd));
+        if (projectOrganization) {
+          setSessionFolders(folderCollapse.overlay(organizationFoldersForProject(snapshot, cwd)));
+          setSessionOrder(organizationOrderForProject(snapshot, cwd));
+        }
         organizationRefreshRequired.current = false;
         if (!organizationBusy.current) {
           const generation = ++reconciliation;
@@ -1987,7 +2090,7 @@ function SidebarComponent({
       alive = false;
       unsubscribe();
     };
-  }, [cwd, t]);
+  }, [cwd, t, organizationNeeded, projectOrganization]);
 
   useEffect(() => {
     if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) return;
@@ -2290,7 +2393,9 @@ function SidebarComponent({
   const canRenameGlobal = (session: SessionSummary) =>
     isRemoteProjectPath(session.cwd) || !!onRenameLocalSession;
   const canPinGlobal = (session: SessionSummary) =>
-    !isProjectlessCwd(session.cwd) && (isRemoteProjectPath(session.cwd) || !!onPinLocalSession);
+    // This computer's projectless conversations pin natively; another machine's do not yet.
+    (session.cwd === "~" || !isProjectlessCwd(session.cwd)) &&
+    (isRemoteProjectPath(session.cwd) || !!onPinLocalSession);
   const canLinkGlobal = remoteMenuSession || !!onSetLocalSessionLinkedWorkItem;
   const canRemindGlobal = menuSessions.every((session) => !isRemoteProjectPath(session.cwd));
   const menuSessionFolder =
@@ -3482,7 +3587,6 @@ function SidebarComponent({
   const renderSessionCard = (session: SessionSummary, inPinnedSection = false) => (
     <SessionCard
       session={session}
-      hideProjectName={sameProjectPath(session.cwd, cwd)}
       renameEditor={
         renamingSessionId === session.id && onRenameSession ? (
           <SessionRenameRow
@@ -4243,24 +4347,9 @@ function SidebarComponent({
       }
     };
     const activeTools = selectionMode || filtersActive || searchQuery.trim().length > 0;
-    const sessionItems: DropdownMenuItem[] =
-      createSession && chooseNewSessionProject
-        ? [{ kind: "item" as const, id: "project", label: t("Choose project") }]
-        : [];
     const sessionOptions =
-      projectless && (sessionItems.length || toolbarItems.length) ? (
-        <SessionOptions
-          items={[
-            ...sessionItems,
-            ...(sessionItems.length && toolbarItems.length ? [{ kind: "sep" as const }] : []),
-            ...toolbarItems,
-          ]}
-          active={activeTools}
-          onPick={(id, anchor) => {
-            if (id === "project") chooseNewSessionProject?.();
-            else onToolbarPick(id, anchor);
-          }}
-        />
+      projectless && toolbarItems.length > 0 ? (
+        <SessionOptions items={toolbarItems} active={activeTools} onPick={onToolbarPick} />
       ) : undefined;
     return (
       <PaneHeader
@@ -4280,7 +4369,9 @@ function SidebarComponent({
             />
           ) : lastSessionsOpen ? (
             t("Last sessions")
-          ) : projectless ? undefined : (
+          ) : projectless ? (
+            t("No project")
+          ) : (
             t("Workspace")
           )
         }
@@ -4288,7 +4379,7 @@ function SidebarComponent({
           createSession || chooseNewSessionProject ? (
             <WorkspaceNewSessionButton
               onNew={createSession}
-              onChooseProject={projectless && createSession ? undefined : chooseNewSessionProject}
+              onChooseProject={chooseNewSessionProject}
             />
           ) : null
         }
@@ -4642,15 +4733,28 @@ function SidebarComponent({
                 />
               ) : (
                 (() => {
-                  return globalVisibleSessions.length ? (
+                  return globalSections.length ? (
                     <GlobalSessionListWindow
-                      groups={globalGroups}
+                      sections={globalSections}
                       scrollRef={sessionsScrollRef}
                       isActive={isGlobalSessionActive}
                       view={globalListView}
-                      renderSession={(session, active) => (
+                      isCollapsed={isGlobalSectionCollapsed}
+                      expandCollapsed={searchNarrowed}
+                      onToggleCollapsed={toggleGlobalSection}
+                      busyIds={busySessionIds}
+                      doneIds={unseenFinishedIds}
+                      approvalIds={approvalSessionIds}
+                      paging={globalPaging}
+                      onlySettled={globalSessionFilters.showSettled}
+                      onArchiveSettled={(settled) => archiveGlobalSessions(settled, true)}
+                      onDeleteSettled={(settled) =>
+                        deleteGlobalSelection(settled.map(globalSessionKey))
+                      }
+                      renderSession={(session, active, inPinnedSection) => (
                         <SessionCard
                           session={session}
+                          inPinnedSection={inPinnedSection}
                           renameEditor={
                             renamingGlobalKey === globalSessionKey(session) ? (
                               <SessionRenameRow
@@ -5172,7 +5276,6 @@ function SidebarComponent({
           local={!remoteProject}
           settled={lastSessionsOpen || !remoteProject || !!projectLifecycleViews}
           filters={lastSessionsOpen ? globalSessionFilters : sessionFilters}
-          allowedTimeFilters={lastSessionsOpen ? GLOBAL_SESSION_TIME_FILTERS : undefined}
           defaultFilters={lastSessionsOpen ? GLOBAL_SESSION_FILTERS : undefined}
           listView={lastSessionsOpen ? globalListView : undefined}
           onListViewChange={lastSessionsOpen ? setGlobalListView : undefined}
@@ -5849,7 +5952,6 @@ function CompactProjectRail({
   const inboxTrigger = useRef<HTMLElement | null>(null);
   const action = (active: boolean, open?: () => void) =>
     active && onLeaveActive ? onLeaveActive : open;
-  const liveStreamOpen = useLiveStreamPageOpen();
   const workspaceActive =
     !searchActive &&
     !inboxActive &&
@@ -5895,18 +5997,12 @@ function CompactProjectRail({
         {onOpenCrews ? (
           <CompactRailAction label={t("Crews")} icon={Bot} onClick={onOpenCrews} />
         ) : null}
-        <CompactRailAction
-          label={t("Live streaming")}
-          icon={CircleDot}
-          active={liveStreamOpen}
-          onClick={action(liveStreamOpen, requestOpenLiveStreamPage)}
-        />
         {onOpenServers ? (
           <CompactRailAction
             label={t("Servers")}
             icon={Server}
-            active={serversActive && !liveStreamOpen}
-            onClick={action(serversActive && !liveStreamOpen, onOpenServers)}
+            active={serversActive}
+            onClick={action(serversActive, onOpenServers)}
           />
         ) : null}
         {onOpenNotes ? (
@@ -5944,21 +6040,15 @@ function CompactProjectRail({
           onClick={action(assistantActive, () => openAssistantRoom())}
         />
         {/* Match the full sidebar's order: tools, then work sections. */}
-        <Divider decorative inset="sm" className="my-(--ui-space-1) shrink-0" />
+        <Divider decorative inset="sm" className="shrink-0" />
         {onOpenProjectNavigation ? (
-          <Button
-            variant="ghost"
-            motion="none"
-            iconOnly
+          <CompactRailAction
             label={t("Projects and groups")}
-            tooltipSide="right"
-            aria-haspopup="dialog"
-            aria-expanded={projectNavigationOpen}
-            selected={projectNavigationOpen}
-            onClick={(event) => onOpenProjectNavigation(event.currentTarget)}
-          >
-            <FolderTree className="icon-sm" aria-hidden />
-          </Button>
+            icon={FolderTree}
+            active={projectNavigationOpen}
+            popup
+            onClick={onOpenProjectNavigation}
+          />
         ) : null}
         {onOpenLastSessions ? (
           <CompactRailAction
@@ -5968,15 +6058,15 @@ function CompactProjectRail({
             onClick={onOpenLastSessions}
           />
         ) : null}
-        {/* Last sessions fills the same pane, so the workspace is not on screen then. */}
-        {!tabShown || !workspaceActive || lastSessionsOpen ? (
-          <CompactRailAction
-            label={t("Workspace")}
-            icon={Chatting}
-            badge={workingSessionsBadge}
-            onClick={onOpenWorkspace}
-          />
-        ) : null}
+        {/* Always present so the rail does not jump; selected while the workspace is on screen.
+            Last sessions fills the same pane, so the workspace is not on screen then. */}
+        <CompactRailAction
+          label={t("Workspace")}
+          icon={Chatting}
+          active={tabShown && workspaceActive && !lastSessionsOpen}
+          badge={workingSessionsBadge}
+          onClick={onOpenWorkspace}
+        />
       </div>
       <div className="min-h-2 flex-1" />
       <SidebarAccountFooter
@@ -6008,6 +6098,7 @@ function CompactRailAction({
   active = false,
   dot = false,
   badge,
+  popup = false,
   onClick,
   onOpenContextMenu,
   ref,
@@ -6018,7 +6109,9 @@ function CompactRailAction({
   active?: boolean;
   dot?: boolean;
   badge?: ReactNode;
-  onClick?: () => void;
+  /** Opens a dialog anchored to the button: `active` means open, not pressed. */
+  popup?: boolean;
+  onClick?: (anchor: HTMLButtonElement) => void;
   onOpenContextMenu?: (x: number, y: number) => void;
   ref?: Ref<HTMLButtonElement>;
 }) {
@@ -6030,9 +6123,13 @@ function CompactRailAction({
     ref,
     type: "button" as const,
     "aria-label": label,
-    "aria-pressed": active,
+    ...(popup
+      ? { "aria-haspopup": "dialog" as const, "aria-expanded": active, selected: active }
+      : { "aria-pressed": active }),
     disabled: !onClick,
-    onClick,
+    onClick: onClick
+      ? (event: ReactMouseEvent<HTMLButtonElement>) => onClick(event.currentTarget)
+      : undefined,
     onContextMenu: onOpenContextMenu
       ? (event: ReactMouseEvent<HTMLButtonElement>) => {
           event.preventDefault();
@@ -6062,12 +6159,13 @@ function CompactRailAction({
       ) : null}
     </>
   );
-  // Names and shortcuts remain available on hover and keyboard focus.
+  // The rail shows no text, so the name is the hover/focus hint, with the shortcut when bound.
   return (
     <Button
       {...sharedProps}
       iconOnly
       label={label}
+      tooltip={label}
       shortcut={shortcut || undefined}
       tooltipSide="right"
       className="relative shrink-0"
@@ -6103,7 +6201,7 @@ function WorkspaceNewSessionButton({
         collapseLabel="container"
         tone="accent"
         motion="none"
-        variant="ghost"
+        variant="secondary"
         size="sm"
         startIcon={<NewSession className="icon-sm" />}
         onClick={onNew}
@@ -6151,7 +6249,7 @@ function SessionOptions({
   const t = useT();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const label = t("Session actions");
+  const label = t("More actions");
   return (
     <>
       <Button
@@ -6162,7 +6260,7 @@ function SessionOptions({
         label={label}
         selected={open || active}
         aria-haspopup="menu"
-        expanded={open}
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
         data-session-selection-keep
       >
@@ -6430,7 +6528,6 @@ const SessionCard = memo(function SessionCard({
   remoteMachineName,
   copyMachine,
   showProjectAppearance = false,
-  hideProjectName = false,
   session,
   isActive,
   isSelected,
@@ -6472,8 +6569,6 @@ const SessionCard = memo(function SessionCard({
   /** The machine of a session that belongs to another copy of this project: icon and tooltip only. */
   copyMachine?: { label: string; local: boolean };
   showProjectAppearance?: boolean;
-  /** The list already belongs to this project, so the row leaves its name out. */
-  hideProjectName?: boolean;
   session: SessionSummary;
   isActive: boolean;
   isSelected: boolean;
@@ -7423,14 +7518,9 @@ const SessionCard = memo(function SessionCard({
               </span>
               {pinAction("col-start-1 row-start-1")}
             </span>
-            {/* Without the name, an empty spacer keeps the commands and time at the end. */}
-            {hideProjectName ? (
-              <span className="flex-1" />
-            ) : (
-              <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-                <SessionSearchText text={project.name} />
-              </Text>
-            )}
+            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+              <SessionSearchText text={project.name} />
+            </Text>
             {rowCommands}
             {statusSlot}
           </Text>

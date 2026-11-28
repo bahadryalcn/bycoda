@@ -72,3 +72,22 @@ and since-woken sessions stay; archiving is reversible from Archive. The Settled
 group's menu offers Archive all (confirmed) and Delete all for the sessions it
 lists; Delete all keeps the existing delete owner and its confirmation. Permanent
 deletion never runs automatically.
+
+## Last sessions history and grouping
+
+Owner decision, 2026-11-28, on the cross-project Last sessions list:
+
+> pinned first, then projects, then no project, then settled; we can still show one week (translated)
+
+Last sessions pages the native history instead of scanning it: project groups, the flat
+list and the Settled shelf each load by keyset page as their end scrolls into view, headers
+use native counts, and a revision counter that ignores transcript-only saves drives refresh.
+Follow-up the same day:
+
+> load while scrolling, settled and normal ones alike; I have many projects (translated)
+
+The seven-day window is only the default time filter for the project groups; Today,
+30 days and All time remain available. Pinned conversations and the Settled shelf list every age. Grouping
+by project is the default; settling moves a row to the shelf instead of hiding it,
+and a pinned row stays in Pinned. Pins and settle state are the ones each
+project list shows.

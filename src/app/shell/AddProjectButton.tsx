@@ -14,7 +14,6 @@ export function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void })
   return (
     <>
       <InlineAction
-        reveal="always"
         label={t("Open project")}
         motion="none"
         ref={anchor}

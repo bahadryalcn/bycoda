@@ -8,23 +8,12 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { surfaceAttributes, Surface } from "../../../shared/ui/Surface";
-import { TextareaField } from "../../../shared/ui/TextareaField";
 import { JiraCommentEditor } from "./JiraCommentEditor";
-import { InboxCommentPreview } from "./InboxCommentPreview";
 import type { JiraCommentImage } from "../model/jiraCommentDocument";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { formatNumber, t, useLocale } from "../../../shared/i18n";
-import { isImeComposition } from "../../../shared/lib/keyboard";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
-import {
-  useEffect,
-  useId,
-  useRef,
-  useSyncExternalStore,
-  type FormEvent,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useId, useRef, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import { X } from "../../../shared/ui/icons";
 import {
   githubReviewStateLabel,
@@ -257,7 +246,7 @@ export function InboxCommentForm({
 }: {
   /** Window-lifetime draft, scoped by record and reply identity by the caller. */
   draftKey?: string;
-  /** Human-readable destination service, shown beside the submit action. */
+  /** Human-readable destination service; "Jira" enables image attachments. */
   target?: string;
   replyTo: InboxReplyTarget | null;
   posting: boolean;
@@ -283,20 +272,7 @@ export function InboxCommentForm({
   );
   const busy = posting || pending || readingImages;
   const submitting = useRef(false);
-  const field = useRef<HTMLTextAreaElement>(null);
   const canPost = (draft.trim().length > 0 || (jiraEditor && images.length > 0)) && !busy;
-
-  useEffect(() => {
-    if (!replyTo) return;
-    field.current?.focus();
-  }, [replyTo]);
-
-  useEffect(() => {
-    const el = field.current;
-    if (!el) return;
-    el.style.height = "0px";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [draft]);
 
   const submit = async () => {
     const body = draft.trim();
@@ -320,13 +296,6 @@ export function InboxCommentForm({
       submitting.current = false;
       setCommentPending(draftIdentity, false);
     }
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (isImeComposition(event.nativeEvent)) return;
-    if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
-    event.preventDefault();
-    void submit();
   };
 
   const onFormSubmit = (event: FormEvent) => {
@@ -359,44 +328,23 @@ export function InboxCommentForm({
         </Text>
       ) : null}
       <div className="space-y-1">
-        {jiraEditor ? (
-          <JiraCommentEditor
-            key={draftIdentity}
-            draftIdentity={draftIdentity}
-            value={draft}
-            onChange={setDraft}
-            images={images}
-            onImages={(next) => setImageDraft(next.length ? next : null)}
-            disabled={busy}
-            onSubmit={submit}
-          />
-        ) : (
-          <InboxCommentPreview draftIdentity={draftIdentity} value={draft}>
-            <TextareaField
-              hideLabel
-              label={replyTo ? t("Reply") : t("Comment")}
-              ref={field}
-              rows={2}
-              value={draft}
-              disabled={busy}
-              placeholder={
-                replyTo
-                  ? t("Write a reply ({p0}↩)", { p0: MOD })
-                  : t("Leave a comment ({p0}↩)", { p0: MOD })
-              }
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={onKeyDown}
-              fieldClassName="w-full"
-              resize="none"
-            />
-          </InboxCommentPreview>
-        )}
+        <JiraCommentEditor
+          key={draftIdentity}
+          draftIdentity={draftIdentity}
+          value={draft}
+          onChange={setDraft}
+          images={jiraEditor ? images : undefined}
+          onImages={jiraEditor ? (next) => setImageDraft(next.length ? next : null) : undefined}
+          disabled={busy}
+          onSubmit={submit}
+          autoFocus={replyTo !== null}
+          placeholder={
+            replyTo
+              ? t("Write a reply ({p0}↩)", { p0: MOD })
+              : t("Leave a comment ({p0}↩)", { p0: MOD })
+          }
+        />
         <div className="flex items-center justify-end gap-2">
-          {target ? (
-            <Text size="caption" tone="secondary" truncate className="min-w-0">
-              {t("Posts publicly to {p0}", { p0: target })}
-            </Text>
-          ) : null}
           <Button
             variant="primary"
             size="sm"

@@ -36,8 +36,9 @@ export function SocialShortcut({
       motion="none"
       {...(compact || rail ? { iconOnly: true, label: t("Social Media") } : { iconOnly: false })}
       // The label is visible or the accessible name already; a hint only helps where the rail hides the text.
-      tooltip={responsiveRail ? t("Social Media") : undefined}
-      tooltipWhen="overflow"
+      tooltip={responsiveRail || rail ? t("Social Media") : undefined}
+      tooltipWhen={rail ? undefined : "overflow"}
+      tooltipSide={rail ? "right" : undefined}
       aria-pressed={active}
       aria-label={responsiveRail ? t("Social Media") : undefined}
       onClick={() => window.dispatchEvent(new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }))}
@@ -45,7 +46,11 @@ export function SocialShortcut({
       <span
         className={`flex min-w-0 items-center gap-2 ${responsiveRail ? "w-full @max-[140px]/rail:justify-center" : ""}`}
       >
-        <Globe className="icon-md shrink-0" aria-hidden />
+        <Globe
+          className={`${rail ? "icon-sm" : "icon-md"} shrink-0`}
+          strokeWidth={rail ? 1.75 : undefined}
+          aria-hidden
+        />
         {compact || rail ? null : (
           <Text
             as="span"

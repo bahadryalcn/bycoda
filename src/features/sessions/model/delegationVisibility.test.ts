@@ -3,7 +3,7 @@ import { sessionDelegationParent } from "../../../shared/model/host-contracts/de
 import { newSession } from "./session";
 import { liveSessionInfos } from "./recentSessions";
 import { summaryFromSession } from "../data/sessionHistory";
-import { buildGlobalRecentSessions } from "./globalRecentSessions";
+import { mergeGlobalRecentSessions } from "./globalRecentSessions";
 import { pathKey } from "../../../shared/lib/paths";
 
 const parent = {
@@ -38,7 +38,7 @@ describe("delegation collection visibility", () => {
     expect(summary.delegationParent).toEqual(parent);
     expect(liveSessionInfos([run])).toEqual([]);
     expect(
-      buildGlobalRecentSessions([summary], [], [run], new Set([pathKey("/repo")]), Date.now()),
+      mergeGlobalRecentSessions([summary], [], [run], new Set([pathKey("/repo")])),
     ).toEqual([]);
   });
 });

@@ -62,6 +62,7 @@ import {
 import { beginHandoffPhase } from "./handoffPhase";
 import { requestWriterHandoff, serveWriterHandoff } from "./writerHandoff";
 import { formatDuration } from "../../../shared/i18n/format";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { t } from "../../../shared/i18n/core";
 import { TurnNotReadyError } from "./types";
 import { retireProviderEpoch, retireProviderOwnerAndCommands } from "./providerEpoch";
@@ -1423,6 +1424,19 @@ export function bindHarnessSession(
  * extensions can sit at ~1GB) even when the workspace never touched them.
  */
 /** `force` re-reads a catalog that already loaded, e.g. after a CLI update. */
+/**
+ * Same age as the Host's catalog cache: a probe spawns the provider CLI, so a list re-probes at
+ * most hourly while the app stays open. Startup, a CLI update and an explicit refresh probe sooner.
+ */
+const CATALOG_MAX_AGE_MS = 60 * 60_000;
+const catalogProbedAt = new Map<HarnessId, number>();
+
+/** A list this window probed itself and longer ago than the max age. One it only received is never stale here. */
+function catalogStale(harness: HarnessId): boolean {
+  const probedAt = catalogProbedAt.get(harness);
+  return probedAt !== undefined && elapsedSince(probedAt) >= CATALOG_MAX_AGE_MS;
+}
+
 export async function refreshHarnessCatalogs(
   ids: Iterable<HarnessId>,
   options?: { force?: boolean },
@@ -1453,11 +1467,12 @@ export async function refreshHarnessCatalogsStrict(
       .filter((adapter) => wanted.has(adapter.id))
       .map(async (adapter) => {
         if (!adapter.refreshCatalog) return;
-        // `force` marks an explicit user action (opening the model dropdown);
-        // routine refreshes keep skipping adapters with a live catalog.
-        if (!options?.force && hasLiveCatalog(adapter.id)) return;
+        // `force` marks an explicit user action; routine refreshes (opening
+        // the picker among them) skip a live catalog until it goes stale.
+        if (!options?.force && hasLiveCatalog(adapter.id) && !catalogStale(adapter.id)) return;
         try {
           await adapter.refreshCatalog();
+          catalogProbedAt.set(adapter.id, monotonicNow());
           probed.add(adapter.id);
         } catch (error: unknown) {
           failures.push(error);

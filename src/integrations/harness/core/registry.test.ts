@@ -2017,6 +2017,26 @@ describe("harness registry", () => {
     expect(pi).toHaveBeenCalledOnce();
   });
 
+  it("probes a live catalog again once it is older than an hour", async () => {
+    let now = 1_000_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const omp = vi.fn(async () => {
+      setHarnessModels("omp", [{ id: "omp:a", harness: "omp", name: "A", nativeId: "a" }]);
+    });
+    registerHarness(stub("omp", { refreshCatalog: omp }));
+    try {
+      await refreshHarnessCatalogs(["omp"]);
+      now += 59 * 60_000;
+      await refreshHarnessCatalogs(["omp"]);
+      expect(omp).toHaveBeenCalledOnce();
+      now += 60_000;
+      await refreshHarnessCatalogs(["omp"]);
+      expect(omp).toHaveBeenCalledTimes(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("skips catalog refresh when no harness is in use", async () => {
     const pi = vi.fn(async () => undefined);
     registerHarness(stub("pi", { refreshCatalog: pi }));

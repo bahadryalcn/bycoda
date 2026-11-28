@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Block } from "./session";
-import { bycodaConversationLabel, bycodaToolCall, bycodaWorkSummary } from "./bycodaToolCall";
+import { bycodaConversationLabel } from "../../../shared/model/bycodaConversationLabels";
+import { bycodaToolCall, bycodaWorkSummary } from "./bycodaToolCall";
 
 function shell(text: string): Block {
   return { id: text, role: "tool", text, tool: { kind: "shell" } };

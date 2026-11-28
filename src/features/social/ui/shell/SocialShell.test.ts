@@ -143,11 +143,12 @@ afterEach(() => {
   element.remove();
 });
 
-it("shows the five sections in order", () => {
+it("shows the sections in order", () => {
   render();
   expect(navButtons().map((button) => button.textContent?.trim())).toEqual([
     "Command",
     "Content",
+    "Live streaming",
     "Audience",
     "Inbox",
     "Accounts & Settings",

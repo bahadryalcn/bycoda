@@ -3,6 +3,12 @@ import { terminalSuggestions } from "./terminalSuggestions";
 
 /** Only echoed text at an ordinary local shell prompt. No input history or storage. */
 export function localTerminalPrefix(terminal: Terminal) {
+  const prefix = terminalPromptLine(terminal);
+  return prefix?.trim() ? prefix : null;
+}
+
+/** The echoed text after a recognised prompt at the cursor; "" for an empty prompt. */
+export function terminalPromptLine(terminal: Terminal): string | null {
   const buffer = terminal.buffer.active;
   if (buffer.type !== "normal" || buffer.viewportY !== buffer.baseY) return null;
   if (terminal.hasSelection?.()) return null;
@@ -12,10 +18,11 @@ export function localTerminalPrefix(terminal: Terminal) {
   if (line.translateToString(true, buffer.cursorX).trim()) return null;
   const before = line.translateToString(false, 0, buffer.cursorX);
   // Common Bash/Zsh/PowerShell/cmd prompts, including decorated Git Bash prompts.
-  const match = /(?:^|.*\s)(?:[$%#❯➜]|>|[^\r\n>]*>) ([^\r\n]*)$/.exec(before);
-  const prefix = match?.[1];
-  if (!prefix?.trim()) return null;
-  return prefix;
+  // Plus the default Debian/RHEL Bash prompts (`root@host:~# `, `[user@host dir]$ `).
+  const match =
+    /(?:^|.*\s)(?:[$%#❯➜]|>|[^\r\n>]*>) ([^\r\n]*)$/.exec(before) ??
+    /^(?:[^\s$#]*|\[[^\]\r\n]*\])[$#] ([^\r\n]*)$/.exec(before);
+  return match?.[1] ?? null;
 }
 
 export function safeHistoryCommand(value: string): boolean {

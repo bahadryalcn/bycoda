@@ -648,6 +648,8 @@ export function toolStartFromEvent(rec: Record<string, unknown>): {
   id: string;
   name: string;
   input: Record<string, unknown>;
+  /** Runs inside the API call (advisor, web search); its result can only come in that message. */
+  server: boolean;
 } | null {
   const event = asRecord(rec.event);
   if (!event || stringField(event, "type") !== "content_block_start") {
@@ -668,6 +670,7 @@ export function toolStartFromEvent(rec: Record<string, unknown>): {
     id,
     name,
     input: asRecord(block.input) ?? {},
+    server: blockType === "server_tool_use",
   };
 }
 
@@ -1188,6 +1191,8 @@ export function applyClaudeTaskTool(
 export function toolKindFromName(toolName: string): string {
   const normalized = toolName.toLowerCase();
   if (isTodoTool(toolName) || isClaudeTaskTool(toolName)) return "tasks";
+  // Deferred-tool loader: its query names tools, not files, so it is no file search.
+  if (normalized === "toolsearch") return "toolsearch";
   if (
     normalized.includes("bash") ||
     normalized.includes("command") ||

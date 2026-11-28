@@ -39,7 +39,13 @@ export function catalogSuggestions(
   source: RemoteSuggestionSource,
   prefix: string,
 ): string[] {
-  if (!catalog || source === "paths" || prefix.length > 256 || !CATALOG_VALUE.test(prefix))
+  // An empty prefix (explicit selection at an empty prompt) lists the newest entries.
+  if (
+    !catalog ||
+    source === "paths" ||
+    prefix.length > 256 ||
+    (prefix !== "" && !CATALOG_VALUE.test(prefix))
+  )
     return [];
   const pool = source === "history" ? catalog.history : [...catalog.history, ...catalog.commands];
   const matches: string[] = [];
@@ -485,6 +491,37 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
   const catalogMatches = (prefix: string) =>
     automatic && promptReady ? catalogSuggestions(catalog, source, prefix) : [];
 
+  /**
+   * Explicit selection from the prompt catalog. Undefined when the prompt is not
+   * verified, the source needs the shell (paths) or no catalog arrived yet: the
+   * caller then falls back to a snapshot request.
+   */
+  const catalogSelection = (prefix: string | null): SshShellPreview | undefined =>
+    promptReady && source !== "paths" && catalog && prefix !== null
+      ? { prefix, suggestions: catalogSuggestions(catalog, source, prefix) }
+      : undefined;
+
+  /**
+   * Opens selection without writing a request chord: the shell's line editor
+   * would erase and redraw the prompt for every Ctrl+Space. False: request instead.
+   */
+  const selectFromCatalog = (prefix: string | null) => {
+    if (!catalogSelection(prefix)) return false;
+    epoch.current += 1;
+    acknowledgement.current = undefined;
+    buffered.current = undefined;
+    pending.current = false;
+    clearTimer();
+    setWaitingFor(null);
+    setFailure(undefined);
+    setState((previous) =>
+      previous?.id === id
+        ? { ...previous, status: "ready", suggestions: undefined, requestId: undefined }
+        : undefined,
+    );
+    return true;
+  };
+
   /** Native code re-checks the value against the catalog this prompt issued. */
   const acceptCatalog = useCallback(
     async (prefix: string, value: string) => {
@@ -512,6 +549,8 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     promptReady,
     previewEpoch,
     catalogMatches,
+    catalogSelection,
+    selectFromCatalog,
     acceptCatalog,
   };
 }

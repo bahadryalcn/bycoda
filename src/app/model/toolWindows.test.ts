@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readToolWindow, TOOL_IDS } from "./toolWindows";
 
 describe("tool window boot routing", () => {
-  it.each(TOOL_IDS.filter((tool) => tool !== "crews" && tool !== "live-stream"))(
+  it.each(TOOL_IDS.filter((tool) => tool !== "crews"))(
     "opens %s without treating it as a conversation transfer",
     (tool) => {
       const params = new URLSearchParams({ tool, cwd: "G:\\Projects\\İş & plan #1", tools: "all" });

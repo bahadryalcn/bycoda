@@ -1081,6 +1081,8 @@ describe("sidebar session rename", () => {
     act(render);
     const row = card();
     const project = row.querySelector("[data-session-row-project]")?.textContent;
+    // The project's own list still names the project on each card.
+    expect(project).toContain("project");
     const input = startRename();
     expect(card()).toBe(row);
     expect(row.querySelector("[data-session-row-project]")?.textContent).toBe(project);
@@ -2048,6 +2050,30 @@ describe("collapsed rail Inbox actions", () => {
     expect(props.onTabChange).not.toHaveBeenCalled();
   });
 
+  it("keeps Workspace on the rail, selected while it is on screen, and names every icon in a tooltip", async () => {
+    props.projectRailOpen = false;
+    props.onSelectProject = vi.fn();
+    props.onOpenProject = vi.fn();
+    props.onShowWorkspace = vi.fn();
+    await act(async () => render());
+    const rail = () => container.querySelector<HTMLElement>("[data-compact-project-rail]")!;
+    const workspace = () =>
+      rail().querySelector<HTMLButtonElement>('button[aria-label="Workspace"]')!;
+    expect(workspace()).not.toBeNull();
+    expect(workspace().getAttribute("aria-pressed")).toBe("true");
+    act(() => workspace().click());
+    expect(rail().querySelector('button[aria-label="Workspace"]')).not.toBeNull();
+    expect(await tooltipText(rail().querySelector<HTMLElement>('button[aria-label="Crews"]')!)).toBe(
+      "Crews",
+    );
+    const projects = rail().querySelector<HTMLElement>('button[aria-label="Projects and groups"]')!;
+    expect(projects.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(await tooltipText(projects)).toBe("Projects and groups");
+    props.inboxActive = true;
+    await act(async () => render());
+    expect(workspace().getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("opens the Crews page directly from the compact rail", async () => {
     const openCrewsPage = vi.fn();
     window.addEventListener(OPEN_CREWS_PAGE_EVENT, openCrewsPage, { once: true });
@@ -2220,6 +2246,7 @@ describe("collapsed rail Inbox actions", () => {
       "Tasks",
       "Assistant",
       "Projects and groups",
+      "Workspace",
     ]);
     expect(rail.querySelectorAll('button[aria-label="Projects and groups"]')).toHaveLength(1);
     expect(rail.querySelector('button[aria-label^="Switch project"]')).toBeNull();
@@ -3505,7 +3532,9 @@ it.each(["standard", "compact", "detailed"] as const)(
       );
       await act(async () => items.find((item) => item.textContent === "Settle")!.click());
       expect(settle).toHaveBeenCalledWith("foreign-session", false);
-      expect(container.querySelector('[data-session-card="foreign-session"]')).toBeNull();
+      // A settled pinned conversation keeps its place in the Pinned block, like a project list.
+      expect(container.querySelector('[data-session-card="foreign-session"]')).not.toBeNull();
+      expect(container.querySelector("[data-pinned-sessions]")).not.toBeNull();
       expect(props.onArchiveSession).not.toHaveBeenCalled();
       expect(props.onDeleteSession).not.toHaveBeenCalled();
       expect(props.lastSessionsData.refresh).not.toHaveBeenCalled();
@@ -3515,6 +3544,49 @@ it.each(["standard", "compact", "detailed"] as const)(
     }
   },
 );
+
+it("moves a settled Last sessions row to the Settled shelf instead of dropping it", async () => {
+  vi.mocked(useLocalLifecycleMachine).mockReturnValue("local");
+  setSessionLifecycleList({ records: [], autoSettle: { afterDays: 3 } });
+  const client = lifecycleClient.sessionLifecycleClient("local");
+  vi.spyOn(client, "settle").mockResolvedValue({
+    sessionId: "foreign-loose",
+    state: "settled",
+    participants: [],
+    settledAt: Date.now(),
+  });
+  vi.spyOn(lifecycleClient, "sessionLifecycleClient").mockReturnValue(client);
+  const foreign = {
+    ...props.sessions[0],
+    id: "foreign-loose",
+    pinned: false,
+    cwd: "/workspace/other",
+    title: "Loose conversation",
+  };
+  props.lastSessionsOpen = true;
+  props.lastSessionsData = { rows: [foreign], loading: false, error: null, refresh: vi.fn() };
+  try {
+    await act(async () => render());
+    const row = container.querySelector('[data-session-card="foreign-loose"]')!;
+    expect(container.querySelector("[data-global-project-group]")).not.toBeNull();
+    act(() =>
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+    );
+    const menu = document.querySelector('[aria-label="Session actions"]');
+    const settleItem = [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])].find(
+      (item) => item.textContent === "Settle",
+    )!;
+    await act(async () => settleItem.click());
+    const shelf = container.querySelector<HTMLElement>("[data-settled-sessions]");
+    expect(shelf).not.toBeNull();
+    // The shelf starts collapsed; opening it shows the settled row again.
+    expect(container.querySelector('[data-session-card="foreign-loose"]')).toBeNull();
+    await act(async () => shelf!.querySelector<HTMLButtonElement>("button")!.click());
+    expect(container.querySelector('[data-session-card="foreign-loose"]')).not.toBeNull();
+  } finally {
+    vi.mocked(useLocalLifecycleMachine).mockReturnValue(undefined);
+  }
+});
 
 it("confirms deletion of the exact Last sessions row before invoking local removal", async () => {
   const listed = { ...props.sessions[0], id: "foreign-delete", cwd: "/workspace/other" };

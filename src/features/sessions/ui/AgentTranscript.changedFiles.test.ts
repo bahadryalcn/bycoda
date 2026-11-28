@@ -65,7 +65,11 @@ it("renders the settled turn's file list below its footer and opens the diff or 
     { id: "answer", role: "assistant", text: "No changes" },
   ]);
   expect(mount.querySelectorAll('ul[aria-label="Changed files"]')).toHaveLength(1);
-  expect(list()?.previousElementSibling?.hasAttribute("data-transcript-actions-row")).toBe(true);
+  expect(
+    mount
+      .querySelector("[data-turn-changed-files]")
+      ?.previousElementSibling?.hasAttribute("data-transcript-actions-row"),
+  ).toBe(true);
   const button = () => list()?.querySelector("button");
   expect(button()?.textContent).toContain("src/main.ts");
   expect(button()?.textContent).toContain("+3−2");

@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useCollectionWindow } from "../hooks/useCollectionVirtualizer";
 import { ComboboxList } from "./arc/combobox/combobox";
+import { SectionLabel } from "./SectionLabel";
 import type { SearchableSelectOption } from "./SearchableSelect";
 import styles from "./SearchableSelect.module.css";
 
@@ -52,6 +53,7 @@ function indexOptions(options: readonly SearchableSelectOption[]) {
 export function SearchableSelectList({
   options,
   activeIndex,
+  revealActive,
   windowed,
   query,
   listRef,
@@ -61,6 +63,8 @@ export function SearchableSelectList({
 }: ComponentPropsWithoutRef<typeof ComboboxList> & {
   options: readonly SearchableSelectOption[];
   activeIndex: number;
+  /** False while the pointer owns the highlight: scrolling to it would fight the wheel. */
+  revealActive: boolean;
   windowed: boolean;
   query: string;
   listRef: RefObject<HTMLDivElement | null>;
@@ -101,8 +105,9 @@ export function SearchableSelectList({
   });
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the scroll viewport aligned with the active result after keyboard navigation and filtering.
   useLayoutEffect(() => {
-    if (windowed && activeEntry !== undefined) scrollToIndex(activeEntry, { align: "auto" });
-  }, [windowed, activeEntry, activeValue, query, scrollToIndex]);
+    if (windowed && revealActive && activeEntry !== undefined)
+      scrollToIndex(activeEntry, { align: "auto" });
+  }, [windowed, revealActive, activeEntry, activeValue, query, scrollToIndex]);
 
   const visible = windowed ? items : entries.map((_, index) => ({ index, start: 0, end: 0 }));
   const blocks: { heading: number; key: string; before: number; rows: ReactNode[] }[] = [];
@@ -134,7 +139,9 @@ export function SearchableSelectList({
           className={styles.groupHeading}
           data-after-group={windowed && options[entry.optionIndex - 1]?.group ? "" : undefined}
         >
-          {options[entry.optionIndex]!.group}
+          <SectionLabel variant="menu" as="span" size="caption">
+            {options[entry.optionIndex]!.group}
+          </SectionLabel>
         </div>
       ) : (
         renderOption(

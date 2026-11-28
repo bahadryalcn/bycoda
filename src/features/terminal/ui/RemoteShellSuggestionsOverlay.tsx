@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
-import { localTerminalPrefix } from "../model/localTerminalCompletion";
+import { localTerminalPrefix, terminalPromptLine } from "../model/localTerminalCompletion";
 import { isTerminalTextEdit } from "../model/terminalKeys";
 import type { SshShellController } from "../model/sshShellIntegration";
 import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
@@ -80,7 +80,16 @@ export function RemoteShellSuggestionsOverlay({
   }, [terminal, passive]);
 
   const matches = passive && typed && armed ? shell.catalogMatches(typed) : [];
-  const preview = typed && matches.length ? { prefix: typed, suggestions: matches } : undefined;
+  // Explicit selection opened from the catalog: no snapshot was requested.
+  const selectionLine =
+    selectionMode && !shell.waiting && shell.state?.status !== "suggestions"
+      ? terminalPromptLine(terminal)
+      : null;
+  const preview = selectionMode
+    ? shell.catalogSelection(selectionLine)
+    : typed && matches.length
+      ? { prefix: typed, suggestions: matches }
+      : undefined;
   const hasLiveSuggestions =
     shell.state?.status === "suggestions" && !!shell.state.suggestions?.length;
   if (alternate || (!selectionMode && !(shell.automatic && (hasLiveSuggestions || preview))))
@@ -98,7 +107,11 @@ export function RemoteShellSuggestionsOverlay({
         shell={shell}
         terminal={terminal}
         preview={preview}
-        canAcceptPreview={() => !stale.current && localTerminalPrefix(terminal) === typed}
+        canAcceptPreview={() =>
+          selectionMode
+            ? !!preview && terminalPromptLine(terminal) === preview.prefix
+            : !stale.current && localTerminalPrefix(terminal) === typed
+        }
         selectionMode={selectionMode}
         onClose={onClose}
       />

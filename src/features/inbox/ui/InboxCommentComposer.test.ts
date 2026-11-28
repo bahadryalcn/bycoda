@@ -272,7 +272,7 @@ it.each(["GitHub", "GitLab", "Azure DevOps", "Linear"])(
       root.render(createElement(InboxCommentForm, { ...props, posting: true })),
     );
     expect(container.querySelector("textarea")!.value).toBe("**draft**");
-    expect(container.querySelector("textarea")!.disabled).toBe(true);
+    expect(container.querySelector("textarea")!.closest("[inert]")).not.toBeNull();
     await act(async () =>
       container
         .querySelector("form")!

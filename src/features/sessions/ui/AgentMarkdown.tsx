@@ -44,7 +44,6 @@ import {
   defaultRehypePlugins,
   defaultComponents,
   defaultRemarkPlugins,
-  detectTextDirection,
   extractTableDataFromElement,
   tableDataToMarkdown,
   useIsCodeFenceIncomplete,
@@ -79,6 +78,7 @@ import { resolveFileOpenRequest } from "../../files/public/fileIndex";
 import { chatPathInfo } from "../../files/public/chatPathChecks";
 import { leafName } from "../../files/public/fileName";
 import { isKnownFileType } from "../../../shared/lib/fileReferenceKind";
+import { detectMarkdownDirection } from "../../../shared/lib/text/markdownDirection";
 import {
   FileReferenceBody,
   fileReferenceChip,
@@ -133,6 +133,13 @@ import {
   PLAINTEXT_FENCE_LANGUAGES,
 } from "./agentMarkdownLanguages";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Alert, type AlertTone } from "../../../shared/ui/Alert";
+import { createMathPlugin } from "@streamdown/math";
+import remarkGemoji from "remark-gemoji";
+import "katex/dist/katex.min.css";
+import { rehypeMarkdownAlerts, type MarkdownAlertKind } from "./markdownAlerts";
+import { remarkGuardSingleDollarMath } from "./markdownMath";
+import { HtmlSnippetPreview } from "./HtmlSnippetPreview";
 const MERMAID_BASE_CONFIG = {
   startOnLoad: false,
   securityLevel: "strict",
@@ -144,22 +151,46 @@ const mermaid = createLazyMermaidPlugin({
     theme: "dark",
   },
 });
-// Extend only href protocols. Every bycoda target is validated before hardening
-// and again at dispatch; images and all other sanitizer rules stay unchanged.
+// Extend href protocols with bycoda, validated before hardening and again at dispatch, and let
+// media sources through to MarkdownImage, the allowlist for every image and media element.
 const [sanitizeMarkdown, markdownSchema] = defaultRehypePlugins.sanitize as [
   Plugin,
-  { protocols?: Record<string, string[]>; [key: string]: unknown },
+  {
+    protocols?: Record<string, string[]>;
+    tagNames?: string[];
+    attributes?: Record<string, unknown[]>;
+    [key: string]: unknown;
+  },
 ];
+const WINDOWS_DRIVE_LETTERS = Array.from({ length: 26 }, (_, index) =>
+  String.fromCharCode(65 + index),
+).flatMap((letter) => [letter, letter.toLowerCase()]);
 const LOCAL_SESSION_SANITIZE: Pluggable = [
   sanitizeMarkdown,
   {
     ...markdownSchema,
+    // Raw media tags keep only their source; MarkdownMediaTag plays it like an image. A frame keeps
+    // only its source and inline page: MarkdownFrameTag sandboxes the page and links the source.
+    tagNames: [...(markdownSchema.tagNames ?? []), "video", "audio", "iframe", "mark", "u"],
+    attributes: {
+      ...markdownSchema.attributes,
+      video: ["src", "title"],
+      audio: ["src", "title"],
+      iframe: ["src", "srcDoc", "title"],
+    },
     protocols: {
       ...markdownSchema.protocols,
       href: [...(markdownSchema.protocols?.href ?? []), "bycoda"],
+      // A Windows path (`G:/out/a.png`) reads as protocol `G`. MarkdownImage loads only local
+      // files and `data:image/` sources, so neither reaches the page as a raw URL.
+      src: [...(markdownSchema.protocols?.src ?? []), "data", ...WINDOWS_DRIVE_LETTERS],
     },
   },
 ];
+
+// KaTeX output and alert kinds are made after sanitizing, so neither is author markup.
+const MARKDOWN_MATH = createMathPlugin({ singleDollarTextMath: true });
+const RENDERED_EXTENSIONS: PluggableList = [MARKDOWN_MATH.rehypePlugin, rehypeMarkdownAlerts];
 
 const MARKDOWN_HARDEN: Pluggable = [
   harden,
@@ -173,12 +204,17 @@ const MARKDOWN_HARDEN: Pluggable = [
   },
 ];
 
+// A reply's images are file paths too (`out/a.png`, `G:/out/a.png`): harden would drop them as
+// URLs, so they are held aside like a document's and MarkdownImage resolves and allowlists them.
 const MARKDOWN_REHYPE_PLUGINS: PluggableList = [
   defaultRehypePlugins.raw,
   LOCAL_SESSION_SANITIZE,
   rehypeHoldLocalSessionLinks,
+  rehypeHoldImageSources,
   MARKDOWN_HARDEN,
   rehypeRestoreLocalSessionLinks,
+  rehypeRestoreImageSources,
+  ...RENDERED_EXTENSIONS,
 ];
 
 const INBOX_MEDIA_REHYPE_PLUGINS: PluggableList = [
@@ -197,6 +233,7 @@ const INBOX_MEDIA_REHYPE_PLUGINS: PluggableList = [
     },
   ],
   rehypeRestoreLocalSessionLinks,
+  ...RENDERED_EXTENSIONS,
 ];
 
 const DOCUMENT_REHYPE_PLUGINS: PluggableList = [
@@ -207,6 +244,7 @@ const DOCUMENT_REHYPE_PLUGINS: PluggableList = [
   MARKDOWN_HARDEN,
   rehypeRestoreLocalSessionLinks,
   rehypeRestoreImageSources,
+  ...RENDERED_EXTENSIONS,
 ];
 
 type FileLinkMenu = {
@@ -498,6 +536,17 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const iconName = fence.fileName ?? (fence.language ? fileNameForLanguage(fence.language) : "");
   const lineNumbers = !/\bnoLineNumbers\b/.test(meta);
   const code = textContent(children);
+  if (!incomplete && !fence.filePath && /^html?$/i.test(fence.language) && code.trim()) {
+    return (
+      <HtmlFence
+        code={code}
+        iconName={iconName}
+        className={className}
+        lineNumbers={lineNumbers}
+        startLine={fence.startLine}
+      />
+    );
+  }
   // A complete, valid JSON object or array shows as a tree with a Raw toggle. A fence that is still
   // streaming, invalid, a scalar or too large keeps the highlighted block below. Parsed once per settled text.
   const json =
@@ -772,7 +821,84 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
       />
     );
   }
-  return null;
+  // An image the reply cannot show here (an SVG, a remote picture) stays a link, never a gap.
+  return url ? (
+    <MarkdownLink href={url} previewMedia={false}>
+      {alt || url}
+    </MarkdownLink>
+  ) : (
+    <ImageAltText alt={alt} title={props.title} />
+  );
+}
+
+const ALERT_TONE: Record<MarkdownAlertKind, AlertTone> = {
+  note: "info",
+  tip: "success",
+  important: "info",
+  warning: "warning",
+  caution: "danger",
+};
+
+/** A `> [!NOTE]` quote as a titled note; any other quote stays a quote. */
+function MarkdownBlockquote({
+  node,
+  children,
+  ...props
+}: ComponentProps<"blockquote"> & { node?: HastElement }) {
+  const t = useT();
+  const kind = node?.properties.dataMarkdownAlert as MarkdownAlertKind | undefined;
+  if (!kind || !(kind in ALERT_TONE))
+    return <defaultComponents.blockquote {...props}>{children}</defaultComponents.blockquote>;
+  const title =
+    kind === "note"
+      ? t("Note")
+      : kind === "tip"
+        ? t("Tip")
+        : kind === "important"
+          ? t("Important")
+          : kind === "warning"
+            ? t("Warning")
+            : t("Caution");
+  return (
+    // ui-drift-ignore: alert-role-prop -- a reply's callout is document content, not live feedback; a status role would re-announce it on every streamed render.
+    <Alert tone={ALERT_TONE[kind]} title={title} role="note" data-markdown-alert={kind}>
+      {children}
+    </Alert>
+  );
+}
+
+/**
+ * A raw `<iframe>`: an inline page (`srcdoc`) runs in the visual sandbox; a remote page is never
+ * embedded, it stays a link the owner can open.
+ */
+function MarkdownFrameTag({
+  src,
+  srcDoc,
+  title,
+}: ComponentProps<"iframe"> & { node?: unknown }) {
+  if (srcDoc?.trim())
+    return (
+      <FenceCard
+        language={title || "html"}
+        icon={null}
+        toggle={null}
+        actions={<CodeCopyButton code={srcDoc} />}
+      >
+        <HtmlSnippetPreview html={srcDoc} />
+      </FenceCard>
+    );
+  if (src && /^https?:\/\//i.test(src))
+    return (
+      <MarkdownLink href={src} previewMedia={false}>
+        {title || src}
+      </MarkdownLink>
+    );
+  return <ImageAltText alt={title} />;
+}
+
+/** A raw `<video>` or `<audio>` tag plays through the same local-file allowlist as an image. */
+function MarkdownMediaTag({ src, title, node }: { src?: string; title?: string; node?: unknown }) {
+  return <MarkdownImage src={src} alt={title} node={node} />;
 }
 
 function MarkdownTable(props: ComponentProps<typeof defaultComponents.table>) {
@@ -850,6 +976,10 @@ const MARKDOWN_COMPONENTS = {
   a: MarkdownLink,
   code: MarkdownCode,
   img: MarkdownImage,
+  video: MarkdownMediaTag,
+  audio: MarkdownMediaTag,
+  iframe: MarkdownFrameTag,
+  blockquote: MarkdownBlockquote,
   table: MarkdownTable,
 } satisfies Components;
 const MARKDOWN_PROSE_COMPONENTS = { ...MARKDOWN_COMPONENTS, span: MarkdownProseSpan };
@@ -866,7 +996,7 @@ const DirectionalBlock = memo(function DirectionalBlock({ dir, ...props }: Block
   useLocale();
   // Streamdown's dir="auto" scans every historical block on each token. Use
   // the same detector here, where unchanged blocks can retain their result.
-  const direction = dir ?? detectTextDirection(props.content);
+  const direction = dir ?? detectMarkdownDirection(props.content);
   const ctx = useContext(BlockPluginContext);
   // Only the block still being written fades its words: it is the only one
   // whose text changes, and a block that has been passed is re-parsed once,
@@ -1022,6 +1152,9 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   const remarkPlugins = useMemo<PluggableList>(
     () => [
       ...Object.values(defaultRemarkPlugins),
+      MARKDOWN_MATH.remarkPlugin,
+      remarkGuardSingleDollarMath,
+      remarkGemoji,
       remarkLocalSessionLinks,
       [remarkWorkspaceFileLinks, { cwd, isProseLine }],
     ],
@@ -1366,6 +1499,67 @@ function JsonFence({
         label={t("JSON tree")}
         className={fenceTree}
       />
+    </FenceCard>
+  );
+}
+
+/** A whole page (doctype or `<html>` first) is an output to look at; a fragment is code to read. */
+const HTML_DOCUMENT = /^\s*(?:<!--[\s\S]*?-->\s*)*<(?:!doctype\s+html|html)[\s>]/i;
+
+/** An ```html fence with a Preview / Code switch; the preview runs in the inline visual sandbox. */
+function HtmlFence({
+  code,
+  iconName,
+  className,
+  lineNumbers,
+  startLine,
+}: {
+  code: string;
+  iconName: string;
+  className?: string;
+  lineNumbers: boolean;
+  startLine?: number;
+}) {
+  const t = useT();
+  const [view, setView] = useState<"preview" | "code">(() =>
+    HTML_DOCUMENT.test(code) ? "preview" : "code",
+  );
+  const icon = iconName ? <FileTypeIcon name={iconName} isDir={false} /> : null;
+  const toggle = (
+    <FenceViewToggle
+      label={t("HTML view")}
+      value={view}
+      options={[
+        { value: "preview", label: t("Preview") },
+        { value: "code", label: t("Code") },
+      ]}
+      onChange={(next) => setView(next === "preview" ? "preview" : "code")}
+    />
+  );
+  if (view === "code") {
+    return (
+      <MarkdownCodeShell code={code} language="html">
+        {icon ? (
+          <span className="markdown-code-icon" aria-hidden="true">
+            {icon}
+          </span>
+        ) : null}
+        {toggle}
+        <CodeCopyButton code={code} />
+        <HighlightedCodeBlock
+          className={className}
+          code={code}
+          isIncomplete={false}
+          language="html"
+          lineNumbers={lineNumbers}
+          startLine={startLine}
+        />
+      </MarkdownCodeShell>
+    );
+  }
+  return (
+    <FenceCard language="html" icon={icon} toggle={toggle} actions={<CodeCopyButton code={code} />}>
+      <HtmlSnippetPreview html={code} />
     </FenceCard>
   );
 }
